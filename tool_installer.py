@@ -192,6 +192,7 @@ class ToolInstaller(NamedTuple):
 
             # operating system
             'darwin',
+            'macos',
             'linux',
             'windows',
             'freebsd',
@@ -230,6 +231,7 @@ class ToolInstaller(NamedTuple):
             's390x',
             'i686',
             'powerpc',
+            'i486',
 
 
 
