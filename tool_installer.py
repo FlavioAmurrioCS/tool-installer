@@ -212,7 +212,6 @@ class ToolInstaller(NamedTuple):
 
             'armv6hf',
             'aarch64',
-            'arm',
             'arm64',
             'armhf',
             'armv5',
@@ -241,18 +240,22 @@ class ToolInstaller(NamedTuple):
         }
 
         system = platform.system().lower()
+
+        valid_tags: list[str] = []
         if system == 'darwin':
-            ignore_patterns.difference_update(('darwin', 'apple', 'macos'))
+            valid_tags.extend(('darwin', 'apple', 'macos'))
         elif system == 'linux':
-            ignore_patterns.difference_update(('linux', '.deb', '.rpm'))
+            valid_tags.extend(('linux', '.deb', '.rpm'))
         elif system == 'windows':
-            ignore_patterns.difference_update(('windows', '.exe'))
+            valid_tags.extend(('windows', '.exe'))
 
         machine = platform.machine().lower()
 
         if machine == 'x86_64':
-            ignore_patterns.difference_update(('x86_64', 'amd64', 'x86'))
-
+            valid_tags.extend(('x86_64', 'amd64', 'x86'))
+        elif machine == 'armv7l':
+            valid_tags.extend(('armv7','armv6'))
+        ignore_patterns.difference_update(valid_tags)
         return re.compile(f"({'|'.join(re.escape(x) for x in ignore_patterns)})")
 
 
@@ -307,11 +310,11 @@ def main(argv: Sequence[str] | None = None) -> int:
 
         print(tool_installer.git_install_release(user='denoland', project='deno'))
         # Fails to run on mac
-        print(tool_installer.git_install_release(user='hadolint', project='hadolint'))
+        # print(tool_installer.git_install_release(user='hadolint', project='hadolint'))
 
-        # Need better approach to find Linux version
-        print(tool_installer.git_install_release(user='llvm', project='llvm-project', binary='clang-format'))
-        print(tool_installer.git_install_release(user='llvm', project='llvm-project', binary='clang-tidy'))
+        # # Need better approach to find Linux version
+        # print(tool_installer.git_install_release(user='llvm', project='llvm-project', binary='clang-format'))
+        # print(tool_installer.git_install_release(user='llvm', project='llvm-project', binary='clang-tidy'))
     return 0
 
 
