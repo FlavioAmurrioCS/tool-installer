@@ -1,0 +1,6 @@
+covdefaults
+coverage
+pytest
+autopep8
+# pre-commit
+# shiv
