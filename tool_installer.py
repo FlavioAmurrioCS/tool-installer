@@ -1,6 +1,10 @@
-#!/usr/bin/env python3
+#!/usr/bin/env bash
+"""":
+exec "${LATEST_PYTHON:-$( which python3.11 || which python3.10 || which python3.9 || which python3.8 || which python3.7 || which python3 || which python)}" "${0}" "${@}"
+"""
 from __future__ import annotations
 
+import argparse
 import glob
 import os
 import platform
@@ -14,15 +18,21 @@ import urllib.request
 import zipfile
 from contextlib import contextmanager
 from functools import lru_cache
+from typing import Callable
 from typing import Generator
 from typing import NamedTuple
 from typing import Sequence
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from typing import Protocol  # python3.8+
+else:
+    Protocol = object
 
 
 class ToolInstaller(NamedTuple):
-    bin_dir: str = os.path.join(os.path.expanduser('~'), 'opt', 'bin')
-    package_dir: str = os.path.join(os.path.expanduser('~'), 'opt', 'packages')
-    git_project_dir: str = os.path.join(os.path.expanduser('~'), 'opt', 'git_projects')
+    bin_dir: str = os.environ.get('TOOL_INSTALLER_BIN_DIR', os.path.join(os.path.expanduser('~'), 'opt', 'bin'))
+    package_dir: str = os.environ.get('TOOL_INSTALLER_PACKAGE_DIR', os.path.join(os.path.expanduser('~'), 'opt', 'packages'))
+    git_project_dir: str = os.environ.get('TOOL_INSTALLER_GIT_PROJECT_DIR', os.path.join(os.path.expanduser('~'), 'opt', 'git_projects'))
 
     def __make_executable__(self, filename: str) -> str:
         os.chmod(filename, os.stat(filename).st_mode | stat.S_IEXEC)
@@ -254,68 +264,93 @@ class ToolInstaller(NamedTuple):
         if machine == 'x86_64':
             valid_tags.extend(('x86_64', 'amd64', 'x86'))
         elif machine == 'armv7l':
-            valid_tags.extend(('armv7','armv6'))
+            valid_tags.extend(('armv7', 'armv6'))
         ignore_patterns.difference_update(valid_tags)
         return re.compile(f"({'|'.join(re.escape(x) for x in ignore_patterns)})")
 
+    def pre_configured(self, tool_name: str) -> str | None:
+        pre_configured_tools: dict[str, Callable[[], str]] = {
+            'theme.sh': lambda: self.git_install_script(user='lemnos', project='theme.sh', path='bin/theme.sh'),
+            'neofetch': lambda: self.git_install_script(user='dylanaraps', project='neofetch'),
+            'adb-sync': lambda: self.git_install_script(user='google', project='adb-sync'),
+            'adb': lambda: self.executable_from_package(package_url=f'https://dl.google.com/android/repository/platform-tools-latest-{platform.system().lower()}.zip', executable_name='adb', package_name='platform-tools'),
+            'repo': lambda: self.executable_from_url(url='https://storage.googleapis.com/git-repo-downloads/repo'),
+            'shiv': lambda: self.git_install_release(user='linkedin', project='shiv'),
+            'pre-commit': lambda: self.git_install_release(user='pre-commit', project='pre-commit'),
+            'fzf': lambda: self.git_install_release(user='junegunn', project='fzf'),
+            'rg': lambda: self.git_install_release(user='BurntSushi', project='ripgrep', binary='rg'),
+            'docker-compose': lambda: self.git_install_release(user='docker', project='compose', binary='docker-compose'),
+            'gdu': lambda: self.git_install_release(user='dundee', project='gdu'),
+            'tldr': lambda: self.git_install_release(user='isacikgoz', project='tldr'),
+            'lazydocker': lambda: self.git_install_release(user='jesseduffield', project='lazydocker'),
+            'lazygit': lambda: self.git_install_release(user='jesseduffield', project='lazygit'),
+            'lazynpm': lambda: self.git_install_release(user='jesseduffield', project='lazynpm'),
+            'shellcheck': lambda: self.git_install_release(user='koalaman', project='shellcheck'),
+            'shfmt': lambda: self.git_install_release(user='mvdan', project='sh', rename='shfmt'),
+            'bat': lambda: self.git_install_release(user='sharkdp', project='bat'),
+            'fd': lambda: self.git_install_release(user='sharkdp', project='fd'),
+            'delta': lambda: self.git_install_release(user='dandavison', project='delta'),
+            'btop': lambda: self.git_install_release(user='aristocratos', project='btop'),
+            'deno': lambda: self.git_install_release(user='denoland', project='deno'),
+            'hadolint': lambda: self.git_install_release(user='hadolint', project='hadolint'),
+            'clang-format': lambda: self.git_install_release(user='llvm', project='llvm-project', binary='clang-format'),
+            'clang-tidy': lambda: self.git_install_release(user='llvm', project='llvm-project', binary='clang-tidy'),
+        }
+        tool = pre_configured_tools.get(tool_name)
+        return None if tool is None else tool()
+
 
 def main(argv: Sequence[str] | None = None) -> int:
-    import argparse
-    from typing import TYPE_CHECKING
-    if TYPE_CHECKING:
-        from typing import Protocol  # python3.8+
-    else:
-        Protocol = object
-
     class __ToolInstallerArgs__(Protocol):
         @property
-        def do_install(self) -> bool:
+        def tool(self) -> str:
             ...
 
         @classmethod
         def __parser__(cls) -> argparse.ArgumentParser:
-            parser = argparse.ArgumentParser()
-            parser.add_argument('--do-install', action='store_true')
+            parser = argparse.ArgumentParser(add_help=False)
+            parser.add_argument(
+                'tool', choices=[
+                    'theme.sh',
+                    'neofetch',
+                    'adb-sync',
+                    'adb',
+                    'repo',
+                    'shiv',
+                    'pre-commit',
+                    'fzf',
+                    'rg',
+                    'docker-compose',
+                    'gdu',
+                    'tldr',
+                    'lazydocker',
+                    'lazygit',
+                    'lazynpm',
+                    'shellcheck',
+                    'shfmt',
+                    'bat',
+                    'fd',
+                    'delta',
+                    'btop',
+                    'deno',
+                    'hadolint',
+                    'clang-format',
+                    'clang-tidy',
+                ],
+            )
             return parser
 
         @classmethod
-        def parse_args(cls, argv: Sequence[str] | None = None) -> __ToolInstallerArgs__:
-            return cls.__parser__().parse_args(argv)  # type:ignore
+        def parse_args(cls, argv: Sequence[str] | None = None) -> tuple[__ToolInstallerArgs__, list[str]]:
+            return cls.__parser__().parse_known_args(argv)  # type:ignore
 
-    args = __ToolInstallerArgs__.parse_args(argv)
-    if args.do_install:
-        tool_installer = ToolInstaller()
-
-        print(tool_installer.git_install_script(user='lemnos', project='theme.sh', path='bin/theme.sh'))
-        print(tool_installer.git_install_script(user='dylanaraps', project='neofetch'))
-        print(tool_installer.git_install_script(user='google', project='adb-sync'))
-        print(tool_installer.executable_from_package(package_url=f'https://dl.google.com/android/repository/platform-tools-latest-{platform.system().lower()}.zip', executable_name='adb', package_name='platform-tools'))
-        print(tool_installer.executable_from_url(url='https://storage.googleapis.com/git-repo-downloads/repo'))
-        print(tool_installer.git_install_release(user='linkedin', project='shiv'))
-        print(tool_installer.git_install_release(user='pre-commit', project='pre-commit'))
-        print(tool_installer.git_install_release(user='junegunn', project='fzf'))
-        print(tool_installer.git_install_release(user='BurntSushi', project='ripgrep', binary='rg'))
-        print(tool_installer.git_install_release(user='docker', project='compose', binary='docker-compose'))
-        print(tool_installer.git_install_release(user='dundee', project='gdu'))
-        print(tool_installer.git_install_release(user='isacikgoz', project='tldr'))
-        print(tool_installer.git_install_release(user='jesseduffield', project='lazydocker'))
-        print(tool_installer.git_install_release(user='jesseduffield', project='lazygit'))
-        print(tool_installer.git_install_release(user='jesseduffield', project='lazynpm'))
-        print(tool_installer.git_install_release(user='koalaman', project='shellcheck'))
-        print(tool_installer.git_install_release(user='mvdan', project='sh', rename='shfmt'))
-        print(tool_installer.git_install_release(user='sharkdp', project='bat'))
-        print(tool_installer.git_install_release(user='sharkdp', project='fd'))
-        print(tool_installer.git_install_release(user='dandavison', project='delta'))
-        print(tool_installer.git_install_release(user='aristocratos', project='btop'))
-
-        print(tool_installer.git_install_release(user='denoland', project='deno'))
-        # Fails to run on mac
-        # print(tool_installer.git_install_release(user='hadolint', project='hadolint'))
-
-        # # Need better approach to find Linux version
-        # print(tool_installer.git_install_release(user='llvm', project='llvm-project', binary='clang-format'))
-        # print(tool_installer.git_install_release(user='llvm', project='llvm-project', binary='clang-tidy'))
-    return 0
+    args, rest = __ToolInstallerArgs__.parse_args(argv)
+    tool_installer = ToolInstaller()
+    tool = tool_installer.pre_configured(args.tool)
+    if tool is None:
+        return 1
+    cmd = (tool, *rest)
+    os.execvp(cmd[0], cmd)
 
 
 if __name__ == '__main__':
