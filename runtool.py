@@ -79,7 +79,25 @@ class ZipTarInstallSource(NamedTuple):
     rename: str | None = None
 
 
-ToolInstallerInstallSource = Union[GithubScriptInstallSource, GithubReleaseInstallSource, GitProjectInstallSource, UrlInstallSource, ZipTarInstallSource]
+class ShivInstallSource(NamedTuple):
+    package: str
+    command: str | None = None
+
+
+class PipxInstallSource(NamedTuple):
+    package: str
+    command: str | None = None
+
+
+ToolInstallerInstallSource = Union[
+    GithubScriptInstallSource,
+    GithubReleaseInstallSource,
+    GitProjectInstallSource,
+    UrlInstallSource,
+    ZipTarInstallSource,
+    ShivInstallSource,
+    PipxInstallSource,
+]
 
 
 PRE_CONFIGURED_TOOLS: dict[str, ToolInstallerInstallSource] = {
@@ -116,11 +134,21 @@ PRE_CONFIGURED_TOOLS: dict[str, ToolInstallerInstallSource] = {
     # ZipTarInstallSource
     'adb': ZipTarInstallSource(package_url=f'https://dl.google.com/android/repository/platform-tools-latest-{platform.system().lower()}.zip', executable_name='adb', package_name='platform-tools'),
     'fastboot': ZipTarInstallSource(package_url=f'https://dl.google.com/android/repository/platform-tools-latest-{platform.system().lower()}.zip', executable_name='fastboot', package_name='platform-tools'),
+    # ShivInstallSource
+    'pipx': ShivInstallSource(package='pipx'),
+    # PipxInstallSource
+    'autopep8': PipxInstallSource(package='autopep8'),
+    'bpython': PipxInstallSource(package='bpython'),
+    'mypy': PipxInstallSource(package='mypy'),
+    'ptpython': PipxInstallSource(package='ptpython'),
+    'tox': PipxInstallSource(package='tox'),
+    'tuna': PipxInstallSource(package='tuna'),
+    'virtualenv': PipxInstallSource(package='virtualenv'),
 }
 
 
 class ToolInstaller(NamedTuple):
-    bin_dir: str = os.environ.get('TOOL_INSTALLER_BIN_DIR', os.path.join(os.path.expanduser('~'), 'opt', 'bin'))
+    bin_dir: str = os.environ.get('TOOL_INSTALLER_BIN_DIR', os.path.join(os.path.expanduser('~'), '.local', 'bin'))
     package_dir: str = os.environ.get('TOOL_INSTALLER_PACKAGE_DIR', os.path.join(os.path.expanduser('~'), 'opt', 'packages'))
     git_project_dir: str = os.environ.get('TOOL_INSTALLER_GIT_PROJECT_DIR', os.path.join(os.path.expanduser('~'), 'opt', 'git_projects'))
 
@@ -379,7 +407,44 @@ class ToolInstaller(NamedTuple):
         if isinstance(source, ZipTarInstallSource):
             return self.executable_from_package(**source._asdict())
 
+        if isinstance(source, ShivInstallSource):
+            return self.shiv_install(**source._asdict())
+
+        if isinstance(source, PipxInstallSource):
+            return self.pipx_install(**source._asdict())
+
         raise SystemExit(1)
+
+    def shiv_install(self, package: str, command: str | None = None) -> str:
+        command = command or package
+        bin_path = os.path.join(self.bin_dir, command)
+        if not os.path.exists(bin_path):
+            shiv_executable = self.git_install_release(user='linkedin', project='shiv')
+            subprocess.run(
+                (
+                    newest_python(),
+                    shiv_executable,
+                    '-c', command,
+                    '-o', bin_path,
+                    package,
+                ),
+                check=True,
+            )
+        return self.__make_executable__(bin_path)
+
+    def pipx_install(self, package: str, command: str | None = None) -> str:
+        command = command or package
+        bin_path = os.path.join(self.bin_dir, command)
+        if not os.path.exists(bin_path):
+            pipx_cmd = self.shiv_install('pipx')
+            env = {
+                **os.environ,
+                'PIPX_DEFAULT_PYTHON': newest_python(),
+                'PIPX_BIN_DIR': self.bin_dir,
+                # 'PIPX_HOME': self.bin_dir,
+            }
+            subprocess.run((pipx_cmd, 'install', '--force', package), check=True, env=env)
+        return bin_path
 
 
 class __ToolInstallerArgs__(Protocol):
@@ -390,7 +455,7 @@ class __ToolInstallerArgs__(Protocol):
     @classmethod
     def __parser__(cls) -> argparse.ArgumentParser:
         parser = argparse.ArgumentParser(add_help=False)
-        parser.add_argument('tool', choices=PRE_CONFIGURED_TOOLS.keys())
+        parser.add_argument('tool', choices=sorted(PRE_CONFIGURED_TOOLS.keys()))
         return parser
 
     @classmethod
