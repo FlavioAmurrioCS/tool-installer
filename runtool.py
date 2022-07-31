@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import argparse
 import glob
+import itertools
 import os
 import platform
 import re
@@ -18,12 +19,12 @@ import tempfile
 import urllib.request
 import zipfile
 from contextlib import contextmanager
-from functools import lru_cache
-from typing import Callable
 from typing import Generator
 from typing import NamedTuple
 from typing import Sequence
 from typing import TYPE_CHECKING
+from typing import Union
+
 if TYPE_CHECKING:
     from typing import Protocol  # python3.8+
 else:
@@ -41,6 +42,81 @@ def newest_python() -> str:
         .stdout
         .strip(),
     )
+
+
+class GithubScriptInstallSource(NamedTuple):
+    user: str
+    project: str
+    path: str | None = None
+    tag: str = 'master'
+    rename: str | None = None
+
+
+class GithubReleaseInstallSource(NamedTuple):
+    user: str
+    project: str
+    tag: str = 'latest'
+    binary: str | None = None
+    rename: str | None = None
+
+
+class GitProjectInstallSource(NamedTuple):
+    git_url: str
+    path: str
+    tag: str = 'master'
+    pull: bool = False
+
+
+class UrlInstallSource(NamedTuple):
+    url: str
+    rename: str | None = None
+
+
+class ZipTarInstallSource(NamedTuple):
+    package_url: str
+    executable_name: str
+    package_name: str | None = None
+    rename: str | None = None
+
+
+ToolInstallerInstallSource = Union[GithubScriptInstallSource, GithubReleaseInstallSource, GitProjectInstallSource, UrlInstallSource, ZipTarInstallSource]
+
+
+PRE_CONFIGURED_TOOLS: dict[str, ToolInstallerInstallSource] = {
+    # GithubScriptInstallSource
+    'theme.sh': GithubScriptInstallSource(user='lemnos', project='theme.sh', path='bin/theme.sh'),
+    'neofetch': GithubScriptInstallSource(user='dylanaraps', project='neofetch'),
+    'adb-sync': GithubScriptInstallSource(user='google', project='adb-sync'),
+    # GithubReleaseInstallSource
+    'shiv': GithubReleaseInstallSource(user='linkedin', project='shiv'),
+    'pre-commit': GithubReleaseInstallSource(user='pre-commit', project='pre-commit'),
+    'fzf': GithubReleaseInstallSource(user='junegunn', project='fzf'),
+    'rg': GithubReleaseInstallSource(user='BurntSushi', project='ripgrep', binary='rg'),
+    'docker-compose': GithubReleaseInstallSource(user='docker', project='compose', binary='docker-compose'),
+    'gdu': GithubReleaseInstallSource(user='dundee', project='gdu'),
+    'tldr': GithubReleaseInstallSource(user='isacikgoz', project='tldr'),
+    'lazydocker': GithubReleaseInstallSource(user='jesseduffield', project='lazydocker'),
+    'lazygit': GithubReleaseInstallSource(user='jesseduffield', project='lazygit'),
+    'lazynpm': GithubReleaseInstallSource(user='jesseduffield', project='lazynpm'),
+    'shellcheck': GithubReleaseInstallSource(user='koalaman', project='shellcheck'),
+    'shfmt': GithubReleaseInstallSource(user='mvdan', project='sh', rename='shfmt'),
+    'bat': GithubReleaseInstallSource(user='sharkdp', project='bat'),
+    'fd': GithubReleaseInstallSource(user='sharkdp', project='fd'),
+    'delta': GithubReleaseInstallSource(user='dandavison', project='delta'),
+    'btop': GithubReleaseInstallSource(user='aristocratos', project='btop'),
+    'deno': GithubReleaseInstallSource(user='denoland', project='deno'),
+    'hadolint': GithubReleaseInstallSource(user='hadolint', project='hadolint'),
+    'clang-format': GithubReleaseInstallSource(user='llvm', project='llvm-project', binary='clang-format'),
+    'clang-tidy': GithubReleaseInstallSource(user='llvm', project='llvm-project', binary='clang-tidy'),
+    # GitProjectInstallSource
+    'pyenv': GitProjectInstallSource(git_url='https://github.com/pyenv/pyenv', path='libexec/pyenv'),
+    'nodenv': GitProjectInstallSource(git_url='https://github.com/nodenv/nodenv', path='libexec/nodenv'),
+    # UrlInstallSource
+    'repo': UrlInstallSource(url='https://storage.googleapis.com/git-repo-downloads/repo'),
+    # ZipTarInstallSource
+    'adb': ZipTarInstallSource(package_url=f'https://dl.google.com/android/repository/platform-tools-latest-{platform.system().lower()}.zip', executable_name='adb', package_name='platform-tools'),
+    'fastboot': ZipTarInstallSource(package_url=f'https://dl.google.com/android/repository/platform-tools-latest-{platform.system().lower()}.zip', executable_name='fastboot', package_name='platform-tools'),
+}
 
 
 class ToolInstaller(NamedTuple):
@@ -63,7 +139,9 @@ class ToolInstaller(NamedTuple):
         ]
 
     def __executable_from_dir__(self, directory: str, executable_name: str) -> str | None:
-        return next((file for file in self.__files_in_dir__(directory) if os.path.basename(file) == executable_name), None) or next((file for file in self.__files_in_dir__(directory) if os.path.basename(file).startswith), None)
+        glob1 = glob.iglob(os.path.join(directory, '**', executable_name), recursive=True)
+        glob2 = glob.iglob(os.path.join(directory, '**', f'{executable_name}*'), recursive=True)
+        return next(itertools.chain(glob1, glob2), None)
 
     @contextmanager
     def __download__(self, url: str) -> Generator[str, None, None]:
@@ -81,13 +159,16 @@ class ToolInstaller(NamedTuple):
             return html
 
     def executable_from_url(self, url: str, rename: str | None = None) -> str:
+        """
+        url must point to executable file.
+        """
         rename = rename or os.path.basename(url)
-        target_dir = os.path.join(self.bin_dir, rename)
-        if not os.path.exists(target_dir):
+        executable_path = os.path.join(self.bin_dir, rename)
+        if not os.path.exists(executable_path):
             os.makedirs(self.bin_dir, exist_ok=True)
             with self.__download__(url) as download_file:
-                shutil.move(download_file, target_dir)
-        return self.__make_executable__(target_dir)
+                shutil.move(download_file, executable_path)
+        return self.__make_executable__(executable_path)
 
     def executable_from_package(
         self,
@@ -96,6 +177,13 @@ class ToolInstaller(NamedTuple):
         package_name: str | None = None,
         rename: str | None = None,
     ) -> str:
+        """
+        Get the executable from a online package.
+        package_url         points to zip/tar file.
+        executable_name     file to looked for in package.
+        package_name        what should the package be rename to.
+        rename              The name of the file place in bin directory
+        """
         package_name = package_name or os.path.basename(package_url)
         package_path = os.path.join(self.package_dir, package_name)
         if not os.path.exists(package_path) or self.__executable_from_dir__(package_path, executable_name) is None:
@@ -136,28 +224,114 @@ class ToolInstaller(NamedTuple):
         tag: str = 'master',
         rename: str | None = None,
     ) -> str:
+        """
+        Download file from github repo.
+
+        user        github username.
+        project     github project name.
+        path        relative path of the file in github repo.
+        tag         branch/tag name.
+        rename      what should the file be rename as.
+        """
         path = path or project
         url = f'https://raw.githubusercontent.com/{user}/{project}/{tag}/{path}'
         return self.executable_from_url(url=url, rename=rename)
 
-    def git_install_repo(self, git_url: str, path: str, tag: str = 'master') -> str:
-        git_project_location = os.path.join(self.git_project_dir, '_'.join(git_url.split('/')[-2:]))
+    def git_install_repo(self, git_url: str, path: str, tag: str = 'master', pull: bool = False) -> str:
+        git_project_location = os.path.join(self.git_project_dir, '_'.join(git_url.split('/')[-1:]))
         git_bin = os.path.join(git_project_location, path)
         if not os.path.exists(git_bin):
-            command = ('git', 'clone', '-b', tag, git_url, git_project_location)
-            subprocess.run(command, check=True)
+            subprocess.run(('git', 'clone', '-b', tag, git_url, git_project_location), check=True)
+        elif pull:
+            subprocess.run(('git', '-C', git_project_location, 'pull'))
         return self.__make_executable__(git_bin)
 
-    def __best_url__(self, links: Sequence[str]) -> str | None:
-        ignore_pattern = self.__system_ignore_pattern__()
-        possible_downloads: list[str] = []
+    def __best_url__(self, links: Sequence[str], uname_result: platform.uname_result = platform.uname()) -> str | None:
+        """
+        Will look at the urls and based on the information it has will try to pick the best one.
 
-        for download_link in sorted(links, key=len, reverse=True):
-            filename = os.path.basename(download_link).lower()
-            search_result = ignore_pattern.search(filename)
-            if search_result is None:
-                possible_downloads.append(download_link)
-        return next(iter(possible_downloads), None)
+        links   links to consider.
+        """
+        if not links:
+            return None
+        if len(links) == 1:
+            return links[0]
+
+        links = self.filter_out_invalid(links)
+        links = self.filter_system(links, uname_result.system)
+        links = self.filter_machine(links, uname_result.machine)
+
+        return sorted(links, key=len)[-1]
+
+    def filter_system(self, links: list[str], system: str) -> list[str]:
+        """
+        links
+        system  darwin,linux,windows
+        """
+        system_patterns = {
+            'darwin': 'darwin|apple|macos',
+            'linux': 'linux|\\.deb|\\.rpm',
+            'windows': 'windows|\\.exe',
+        }
+
+        system = system.lower()
+        if system not in system_patterns or not links or len(links) == 1:
+            return links
+
+        pat = re.compile(system_patterns[system])
+        filtered_links = [x for x in links if pat.search(os.path.basename(x).lower())]
+        return filtered_links or links
+
+    def filter_machine(self, links: list[str], machine: str) -> list[str]:
+        machine_patterns = {
+            'x86_64': 'x86_64|amd64|x86',
+            'arm64': 'arm64|arch64',
+        }
+
+        if not links or len(links) == 1:
+            return links
+
+        machine = machine.lower()
+        pat = re.compile(machine_patterns.get(machine, machine))
+        filtered_links = [x for x in links if pat.search(os.path.basename(x).lower())]
+        return filtered_links or links
+
+    def filter_out_invalid(self, links: Sequence[str]) -> list[str]:
+        return [
+            x
+            for x in links
+            if not re.search(
+                '\\.txt|license|\\.md|\\.sha256|\\.sha256sum|checksums|\\.asc|\\.sig|src',
+                os.path.basename(x).lower(),
+            )
+        ]
+
+    def __github_get_release_links__(
+        self,
+        user: str,
+        project: str,
+        tag: str = 'latest',
+    ) -> list[str]:
+
+        url = f'https://github.com/{user}/{project}/releases/{"latest" if tag == "latest" else f"tag/{tag}"}'
+        html = self.__get_html__(url)
+        return ['https://github.com' + link for link in re.findall(f'/{user}/{project}/releases/download/[^"]+', html)]
+
+    def install_best(self, links: Sequence[str], binary: str, rename: str | None = None, package_name: str | None = None) -> str:
+        rename = rename or binary
+        download_url = self.__best_url__(links)
+        if not download_url:
+            print(f'Could not choose appropiate download from {rename}', file=sys.stderr)
+            raise SystemExit(1)
+        basename = os.path.basename(download_url)
+        if basename.endswith('.zip') or '.tar' in basename or basename.endswith('.tgz') or basename.endswith('.tbz'):
+            return self.executable_from_package(
+                package_url=download_url,
+                executable_name=binary,
+                package_name=package_name,
+                rename=rename,
+            )
+        return self.executable_from_url(download_url, rename=rename)
 
     def git_install_release(
         self,
@@ -169,157 +343,43 @@ class ToolInstaller(NamedTuple):
     ) -> str:
         binary = binary or project
         rename = rename or binary
-        bin_install_path = os.path.join(self.bin_dir, rename)
-        package_name = f'{user}_{project}'
 
+        # Check to see if binary already exist in bin directory
+        bin_install_path = os.path.join(self.bin_dir, rename)
         if os.path.exists(bin_install_path):
-            return bin_install_path
+            return self.__make_executable__(bin_install_path)
+
+        # Check if binary exist is downloaded package
+        package_name = f'{user}_{project}'
         possible = self.__executable_from_dir__(os.path.join(self.package_dir, package_name), binary)
         if possible is not None:
-            return possible
+            return self.__make_executable__(possible)
 
-        url = f'https://github.com/{user}/{project}/releases/{"latest" if tag == "latest" else f"tag/{tag}"}'
-        html = self.__get_html__(url)
-        download_links: list[str] = ['https://github.com' + link for link in re.findall(f'/{user}/{project}/releases/download/[^"]+', html)]
+        # Get all download links from github release page
+        download_links: list[str] = self.__github_get_release_links__(
+            user=user,
+            project=project,
+            tag=tag,
+        )
+        return self.install_best(download_links, binary=binary, rename=rename, package_name=package_name)
 
-        download_url = self.__best_url__(download_links)
-        if not download_url:
-            print(f'Could not find appropiate download from {url}', file=sys.stderr)
-            raise SystemExit(1)
-        basename = os.path.basename(download_url)
-        if basename.endswith('.zip') or '.tar' in basename or basename.endswith('.tgz') or basename.endswith('.tbz'):
-            return self.executable_from_package(
-                package_url=download_url,
-                executable_name=binary,
-                package_name=f'{user}_{project}',
-                rename=rename,
-            )
-        return self.executable_from_url(download_url, rename=rename)
+    def get_executable(self, source: ToolInstallerInstallSource) -> str:
+        if isinstance(source, GithubScriptInstallSource):
+            return self.git_install_script(**source._asdict())
 
-    @staticmethod
-    @lru_cache(maxsize=1)
-    def __system_ignore_pattern__() -> re.Pattern[str]:
-        ignore_patterns: set[str] = {
-            # invalid file types
-            '.txt',
-            'license',
-            '.md',
-            '.sha256',
-            '.sha256sum',
-            'checksums',
-            'sha256sums',
-            '.asc',
-            '.sig',
-            'src',
+        if isinstance(source, GithubReleaseInstallSource):
+            return self.git_install_release(**source._asdict())
 
-            # compressed
-            # '.tar.gz',
-            # '.zip',
-            # '.tar.xz',
-            # '.tgz',
+        if isinstance(source, GitProjectInstallSource):
+            return self.git_install_repo(**source._asdict())
 
-            # packages
-            '.deb',
-            '.rpm',
+        if isinstance(source, UrlInstallSource):
+            return self.executable_from_url(**source._asdict())
 
-            # operating system
-            'darwin',
-            'macos',
-            'linux',
-            'windows',
-            'freebsd',
-            'netbsd',
-            'openbsd',
+        if isinstance(source, ZipTarInstallSource):
+            return self.executable_from_package(**source._asdict())
 
-
-            # cpu
-            'x86_64',
-
-            '32-bit',
-            'amd64',
-            'x86',
-
-            'i386',
-            '386',
-
-            'armv6hf',
-            'aarch64',
-            'arm64',
-            'armhf',
-            'armv5',
-            'armv5l',
-            'armv6',
-            'armv6l',
-            'armv7',
-            'armv7l',
-
-            'mips',
-            'mips64',
-            'mips64le',
-            'mipsle',
-            'ppc64',
-            'ppc64le',
-            's390x',
-            'i686',
-            'powerpc',
-            'i486',
-
-
-
-            # extensions
-            # '.pyz',
-            '.exe',
-        }
-
-        system = platform.system().lower()
-
-        valid_tags: list[str] = []
-        if system == 'darwin':
-            valid_tags.extend(('darwin', 'apple', 'macos'))
-        elif system == 'linux':
-            valid_tags.extend(('linux', '.deb', '.rpm'))
-        elif system == 'windows':
-            valid_tags.extend(('windows', '.exe'))
-
-        machine = platform.machine().lower()
-
-        if machine == 'x86_64':
-            valid_tags.extend(('x86_64', 'amd64', 'x86'))
-        elif machine == 'armv7l':
-            valid_tags.extend(('armv7', 'armv6'))
-        ignore_patterns.difference_update(valid_tags)
-        return re.compile(f"({'|'.join(re.escape(x) for x in ignore_patterns)})")
-
-
-PRE_CONFIGURED_TOOLS: dict[str, Callable[[ToolInstaller], str]] = {
-    'theme.sh': lambda tool_installer: tool_installer.git_install_script(user='lemnos', project='theme.sh', path='bin/theme.sh'),
-    'neofetch': lambda tool_installer: tool_installer.git_install_script(user='dylanaraps', project='neofetch'),
-    'adb-sync': lambda tool_installer: tool_installer.git_install_script(user='google', project='adb-sync'),
-    'adb': lambda tool_installer: tool_installer.executable_from_package(package_url=f'https://dl.google.com/android/repository/platform-tools-latest-{platform.system().lower()}.zip', executable_name='adb', package_name='platform-tools'),
-    'repo': lambda tool_installer: tool_installer.executable_from_url(url='https://storage.googleapis.com/git-repo-downloads/repo'),
-    'shiv': lambda tool_installer: tool_installer.git_install_release(user='linkedin', project='shiv'),
-    'pre-commit': lambda tool_installer: tool_installer.git_install_release(user='pre-commit', project='pre-commit'),
-    'fzf': lambda tool_installer: tool_installer.git_install_release(user='junegunn', project='fzf'),
-    'rg': lambda tool_installer: tool_installer.git_install_release(user='BurntSushi', project='ripgrep', binary='rg'),
-    'docker-compose': lambda tool_installer: tool_installer.git_install_release(user='docker', project='compose', binary='docker-compose'),
-    'gdu': lambda tool_installer: tool_installer.git_install_release(user='dundee', project='gdu'),
-    'tldr': lambda tool_installer: tool_installer.git_install_release(user='isacikgoz', project='tldr'),
-    'lazydocker': lambda tool_installer: tool_installer.git_install_release(user='jesseduffield', project='lazydocker'),
-    'lazygit': lambda tool_installer: tool_installer.git_install_release(user='jesseduffield', project='lazygit'),
-    'lazynpm': lambda tool_installer: tool_installer.git_install_release(user='jesseduffield', project='lazynpm'),
-    'shellcheck': lambda tool_installer: tool_installer.git_install_release(user='koalaman', project='shellcheck'),
-    'shfmt': lambda tool_installer: tool_installer.git_install_release(user='mvdan', project='sh', rename='shfmt'),
-    'bat': lambda tool_installer: tool_installer.git_install_release(user='sharkdp', project='bat'),
-    'fd': lambda tool_installer: tool_installer.git_install_release(user='sharkdp', project='fd'),
-    'delta': lambda tool_installer: tool_installer.git_install_release(user='dandavison', project='delta'),
-    'btop': lambda tool_installer: tool_installer.git_install_release(user='aristocratos', project='btop'),
-    'deno': lambda tool_installer: tool_installer.git_install_release(user='denoland', project='deno'),
-    'hadolint': lambda tool_installer: tool_installer.git_install_release(user='hadolint', project='hadolint'),
-    'clang-format': lambda tool_installer: tool_installer.git_install_release(user='llvm', project='llvm-project', binary='clang-format'),
-    'clang-tidy': lambda tool_installer: tool_installer.git_install_release(user='llvm', project='llvm-project', binary='clang-tidy'),
-    'pyenv': lambda tool_installer: tool_installer.git_install_repo(git_url='https://github.com/pyenv/pyenv', path='libexec/pyenv'),
-    'nodenv': lambda tool_installer: tool_installer.git_install_repo(git_url='https://github.com/nodenv/nodenv', path='libexec/nodenv'),
-}
+        raise SystemExit(1)
 
 
 class __ToolInstallerArgs__(Protocol):
@@ -341,7 +401,7 @@ class __ToolInstallerArgs__(Protocol):
 def __run_which__(argv: Sequence[str] | None = None, print_tool: bool = True) -> tuple[__ToolInstallerArgs__, list[str], str]:
     args, rest = __ToolInstallerArgs__.parse_args(argv)
     tool_installer = ToolInstaller()
-    tool = PRE_CONFIGURED_TOOLS[args.tool](tool_installer)
+    tool = tool_installer.get_executable(PRE_CONFIGURED_TOOLS[args.tool])
     if print_tool:
         print(tool)
         raise SystemExit(0)
@@ -352,6 +412,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     args, rest, tool = __run_which__(argv, print_tool=False)
     cmd = (tool, *rest)
     os.execvp(cmd[0], cmd)
+
+    # for k, v in PRE_CONFIGURED_TOOLS.items():
+    #     if isinstance(v, GithubReleaseInstallSource):
+    #         __run_which__(argv=(k,), print_tool=True)
     return 0
 
 
