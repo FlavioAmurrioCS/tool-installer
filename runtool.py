@@ -124,8 +124,6 @@ PRE_CONFIGURED_TOOLS: dict[str, ToolInstallerInstallSource] = {
     'btop': GithubReleaseInstallSource(user='aristocratos', project='btop'),
     'deno': GithubReleaseInstallSource(user='denoland', project='deno'),
     'hadolint': GithubReleaseInstallSource(user='hadolint', project='hadolint'),
-    'clang-format': GithubReleaseInstallSource(user='llvm', project='llvm-project', binary='clang-format'),
-    'clang-tidy': GithubReleaseInstallSource(user='llvm', project='llvm-project', binary='clang-tidy'),
     # GitProjectInstallSource
     'pyenv': GitProjectInstallSource(git_url='https://github.com/pyenv/pyenv', path='libexec/pyenv'),
     'nodenv': GitProjectInstallSource(git_url='https://github.com/nodenv/nodenv', path='libexec/nodenv'),
@@ -139,6 +137,9 @@ PRE_CONFIGURED_TOOLS: dict[str, ToolInstallerInstallSource] = {
     # PipxInstallSource
     'autopep8': PipxInstallSource(package='autopep8'),
     'bpython': PipxInstallSource(package='bpython'),
+    'clang-format': PipxInstallSource(package='clang-format'),
+    'clang-tidy': PipxInstallSource(package='clang-tidy'),
+    'gcovr': PipxInstallSource(package='gcovr'),
     'mypy': PipxInstallSource(package='mypy'),
     'ptpython': PipxInstallSource(package='ptpython'),
     'tox': PipxInstallSource(package='tox'),
