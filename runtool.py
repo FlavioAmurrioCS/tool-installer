@@ -89,6 +89,13 @@ class PipxInstallSource(NamedTuple):
     command: str | None = None
 
 
+class GroupUrlInstallSource(NamedTuple):
+    links: Sequence[str]
+    binary: str
+    rename: str | None = None
+    package_name: str | None = None
+
+
 ToolInstallerInstallSource = Union[
     GithubScriptInstallSource,
     GithubReleaseInstallSource,
@@ -97,6 +104,7 @@ ToolInstallerInstallSource = Union[
     ZipTarInstallSource,
     ShivInstallSource,
     PipxInstallSource,
+    GroupUrlInstallSource,
 ]
 
 
@@ -145,6 +153,7 @@ PRE_CONFIGURED_TOOLS: dict[str, ToolInstallerInstallSource] = {
     'tox': PipxInstallSource(package='tox'),
     'tuna': PipxInstallSource(package='tuna'),
     'virtualenv': PipxInstallSource(package='virtualenv'),
+    'heroku': GroupUrlInstallSource(links=[f'https://cli-assets.heroku.com/heroku-{x}.tar.gz' for x in ('darwin-x64', 'linux-x64', 'linux-arm', 'win32-x64', 'win32-x86')], binary='heroku', package_name='heroku'),
 }
 
 
@@ -170,7 +179,7 @@ class ToolInstaller(NamedTuple):
     def __executable_from_dir__(self, directory: str, executable_name: str) -> str | None:
         glob1 = glob.iglob(os.path.join(directory, '**', executable_name), recursive=True)
         glob2 = glob.iglob(os.path.join(directory, '**', f'{executable_name}*'), recursive=True)
-        return next(itertools.chain(glob1, glob2), None)
+        return next((x for x in itertools.chain(glob1, glob2) if os.path.isfile(x)), None)
 
     @contextmanager
     def __download__(self, url: str) -> Generator[str, None, None]:
@@ -413,6 +422,9 @@ class ToolInstaller(NamedTuple):
 
         if isinstance(source, PipxInstallSource):
             return self.pipx_install(**source._asdict())
+
+        if isinstance(source, GroupUrlInstallSource):
+            return self.install_best(**source._asdict())
 
         raise SystemExit(1)
 
