@@ -34,7 +34,7 @@ else:
 def newest_python() -> str:
     return os.path.realpath(
         subprocess.run(
-            ('which python3.11 || which python3.10 || which python3.9 || which python3.8 || which python3.7 || which python3 || which python'),
+            ('{ which python3.11 || which python3.10 || which python3.9 || which python3.8 || which python3.7 || which python3 || which python; } 2>/dev/null'),
             shell=True,
             capture_output=True,
             encoding='utf-8',
@@ -113,9 +113,9 @@ PRE_CONFIGURED_TOOLS: dict[str, ToolInstallerInstallSource] = {
     'theme.sh': GithubScriptInstallSource(user='lemnos', project='theme.sh', path='bin/theme.sh'),
     'neofetch': GithubScriptInstallSource(user='dylanaraps', project='neofetch'),
     'adb-sync': GithubScriptInstallSource(user='google', project='adb-sync'),
+
     # GithubReleaseInstallSource
     'shiv': GithubReleaseInstallSource(user='linkedin', project='shiv'),
-    'pre-commit': GithubReleaseInstallSource(user='pre-commit', project='pre-commit'),
     'fzf': GithubReleaseInstallSource(user='junegunn', project='fzf'),
     'rg': GithubReleaseInstallSource(user='BurntSushi', project='ripgrep', binary='rg'),
     'docker-compose': GithubReleaseInstallSource(user='docker', project='compose', binary='docker-compose'),
@@ -132,28 +132,42 @@ PRE_CONFIGURED_TOOLS: dict[str, ToolInstallerInstallSource] = {
     'btop': GithubReleaseInstallSource(user='aristocratos', project='btop'),
     'deno': GithubReleaseInstallSource(user='denoland', project='deno'),
     'hadolint': GithubReleaseInstallSource(user='hadolint', project='hadolint'),
+    'code-server': GithubReleaseInstallSource(user='coder', project='code-server', binary='code-server'),
+
     # GitProjectInstallSource
     'pyenv': GitProjectInstallSource(git_url='https://github.com/pyenv/pyenv', path='libexec/pyenv'),
     'nodenv': GitProjectInstallSource(git_url='https://github.com/nodenv/nodenv', path='libexec/nodenv'),
+
     # UrlInstallSource
     'repo': UrlInstallSource(url='https://storage.googleapis.com/git-repo-downloads/repo'),
+
     # ZipTarInstallSource
     'adb': ZipTarInstallSource(package_url=f'https://dl.google.com/android/repository/platform-tools-latest-{platform.system().lower()}.zip', executable_name='adb', package_name='platform-tools'),
     'fastboot': ZipTarInstallSource(package_url=f'https://dl.google.com/android/repository/platform-tools-latest-{platform.system().lower()}.zip', executable_name='fastboot', package_name='platform-tools'),
+
     # ShivInstallSource
     'pipx': ShivInstallSource(package='pipx'),
+
     # PipxInstallSource
     'autopep8': PipxInstallSource(package='autopep8'),
+    'babi': PipxInstallSource(package='babi'),
     'bpython': PipxInstallSource(package='bpython'),
     'clang-format': PipxInstallSource(package='clang-format'),
     'clang-tidy': PipxInstallSource(package='clang-tidy'),
     'gcovr': PipxInstallSource(package='gcovr'),
+    'jupyter-lab': PipxInstallSource(package='jupyterlab', command='jupyter-lab'),
+    'jupyter-notebook': PipxInstallSource(package='notebook', command='jupyter-notebook'),
     'mypy': PipxInstallSource(package='mypy'),
+    'pre-commit': PipxInstallSource(package='pre-commit'),
     'ptpython': PipxInstallSource(package='ptpython'),
+    'run': PipxInstallSource(package='runtool', command='run'),
+    'run-which': PipxInstallSource(package='runtool', command='run-which'),
     'tox': PipxInstallSource(package='tox'),
     'tuna': PipxInstallSource(package='tuna'),
     'virtualenv': PipxInstallSource(package='virtualenv'),
+
     'heroku': GroupUrlInstallSource(links=[f'https://cli-assets.heroku.com/heroku-{x}.tar.gz' for x in ('darwin-x64', 'linux-x64', 'linux-arm', 'win32-x64', 'win32-x86')], binary='heroku', package_name='heroku'),
+    'rclone': GroupUrlInstallSource(links=[f'https://downloads.rclone.org/rclone-current-{x}' for x in ('windows-amd64.zip', 'osx-amd64.zip', 'linux-amd64.zip', 'linux-amd64.deb', 'linux-amd64.rpm', 'freebsd-amd64.zip', 'netbsd-amd64.zip', 'openbsd-amd64.zip', 'plan9-amd64.zip', 'solaris-amd64.zip', 'windows-386.zip', 'linux-386.zip', 'linux-386.deb', 'linux-386.rpm', 'freebsd-386.zip', 'netbsd-386.zip', 'openbsd-386.zip', 'plan9-386.zip', 'linux-arm.zip', 'linux-arm.deb', 'linux-arm.rpm', 'freebsd-arm.zip', 'netbsd-arm.zip', 'linux-arm-v7.zip', 'linux-arm-v7.deb', 'linux-arm-v7.rpm', 'freebsd-arm-v7.zip', 'netbsd-arm-v7.zip', 'osx-arm64.zip', 'linux-arm64.zip', 'linux-arm64.deb', 'linux-arm64.rpm', 'linux-mips.zip', 'linux-mips.deb', 'linux-mips.rpm', 'linux-mipsle.zip', 'linux-mipsle.deb', 'linux-mipsle.rpm')], binary='rclone', package_name='rclone'),
 }
 
 
@@ -179,7 +193,7 @@ class ToolInstaller(NamedTuple):
     def __executable_from_dir__(self, directory: str, executable_name: str) -> str | None:
         glob1 = glob.iglob(os.path.join(directory, '**', executable_name), recursive=True)
         glob2 = glob.iglob(os.path.join(directory, '**', f'{executable_name}*'), recursive=True)
-        return next((x for x in itertools.chain(glob1, glob2) if os.path.isfile(x)), None)
+        return next((x for x in itertools.chain(glob1, glob2) if (os.path.isfile(x)) and not os.path.islink(x)), None)
 
     @contextmanager
     def __download__(self, url: str) -> Generator[str, None, None]:
@@ -307,7 +321,7 @@ class ToolInstaller(NamedTuple):
         system  darwin,linux,windows
         """
         system_patterns = {
-            'darwin': 'darwin|apple|macos',
+            'darwin': 'darwin|apple|macos|osx',
             'linux': 'linux|\\.deb|\\.rpm',
             'windows': 'windows|\\.exe',
         }
