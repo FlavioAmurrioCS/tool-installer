@@ -108,6 +108,41 @@ ToolInstallerInstallSource = Union[
 ]
 
 
+__node_download_links___ = [
+    f'https://nodejs.org/dist/v16.16.0/node-v16.16.0{x}'
+    for x in (
+        '-aix-ppc64.tar.gz', '-darwin-arm64.tar.gz', '-darwin-arm64.tar.xz',
+        '-darwin-x64.tar.gz', '-darwin-x64.tar.xz', '-headers.tar.gz',
+        '-headers.tar.xz', '-linux-arm64.tar.gz', '-linux-arm64.tar.xz',
+        '-linux-armv7l.tar.gz', '-linux-armv7l.tar.xz', '-linux-ppc64le.tar.gz',
+        '-linux-ppc64le.tar.xz', '-linux-s390x.tar.gz', '-linux-s390x.tar.xz',
+        '-linux-x64.tar.gz', '-linux-x64.tar.xz', '-win-x64.7z', '-win-x64.zip',
+        '-win-x86.7z', '-win-x86.zip', '-x64.msi', '-x86.msi', '.pkg', '.tar.gz', '.tar.xz',
+    )
+]
+
+__rclone_download_links___ = [
+    f'https://downloads.rclone.org/rclone-current-{x}'
+    for x in (
+        'windows-amd64.zip', 'osx-amd64.zip', 'linux-amd64.zip', 'linux-amd64.deb',
+        'linux-amd64.rpm', 'freebsd-amd64.zip', 'netbsd-amd64.zip', 'openbsd-amd64.zip',
+        'plan9-amd64.zip', 'solaris-amd64.zip', 'windows-386.zip', 'linux-386.zip',
+        'linux-386.deb', 'linux-386.rpm', 'freebsd-386.zip', 'netbsd-386.zip',
+        'openbsd-386.zip', 'plan9-386.zip', 'linux-arm.zip', 'linux-arm.deb',
+        'linux-arm.rpm', 'freebsd-arm.zip', 'netbsd-arm.zip', 'linux-arm-v7.zip',
+        'linux-arm-v7.deb', 'linux-arm-v7.rpm', 'freebsd-arm-v7.zip', 'netbsd-arm-v7.zip',
+        'osx-arm64.zip', 'linux-arm64.zip', 'linux-arm64.deb', 'linux-arm64.rpm',
+        'linux-mips.zip', 'linux-mips.deb', 'linux-mips.rpm', 'linux-mipsle.zip',
+        'linux-mipsle.deb', 'linux-mipsle.rpm',
+    )
+]
+
+__heroku_download_links___ = [
+    f'https://cli-assets.heroku.com/heroku-{x}.tar.gz'
+    for x in ('darwin-x64', 'linux-x64', 'linux-arm', 'win32-x64', 'win32-x86')
+]
+
+
 PRE_CONFIGURED_TOOLS: dict[str, ToolInstallerInstallSource] = {
     # GithubScriptInstallSource
     'theme.sh': GithubScriptInstallSource(user='lemnos', project='theme.sh', path='bin/theme.sh'),
@@ -166,8 +201,12 @@ PRE_CONFIGURED_TOOLS: dict[str, ToolInstallerInstallSource] = {
     'tuna': PipxInstallSource(package='tuna'),
     'virtualenv': PipxInstallSource(package='virtualenv'),
 
-    'heroku': GroupUrlInstallSource(links=[f'https://cli-assets.heroku.com/heroku-{x}.tar.gz' for x in ('darwin-x64', 'linux-x64', 'linux-arm', 'win32-x64', 'win32-x86')], binary='heroku', package_name='heroku'),
-    'rclone': GroupUrlInstallSource(links=[f'https://downloads.rclone.org/rclone-current-{x}' for x in ('windows-amd64.zip', 'osx-amd64.zip', 'linux-amd64.zip', 'linux-amd64.deb', 'linux-amd64.rpm', 'freebsd-amd64.zip', 'netbsd-amd64.zip', 'openbsd-amd64.zip', 'plan9-amd64.zip', 'solaris-amd64.zip', 'windows-386.zip', 'linux-386.zip', 'linux-386.deb', 'linux-386.rpm', 'freebsd-386.zip', 'netbsd-386.zip', 'openbsd-386.zip', 'plan9-386.zip', 'linux-arm.zip', 'linux-arm.deb', 'linux-arm.rpm', 'freebsd-arm.zip', 'netbsd-arm.zip', 'linux-arm-v7.zip', 'linux-arm-v7.deb', 'linux-arm-v7.rpm', 'freebsd-arm-v7.zip', 'netbsd-arm-v7.zip', 'osx-arm64.zip', 'linux-arm64.zip', 'linux-arm64.deb', 'linux-arm64.rpm', 'linux-mips.zip', 'linux-mips.deb', 'linux-mips.rpm', 'linux-mipsle.zip', 'linux-mipsle.deb', 'linux-mipsle.rpm')], binary='rclone', package_name='rclone'),
+    # GroupUrlInstallSource
+    'heroku': GroupUrlInstallSource(links=__heroku_download_links___, binary='heroku', package_name='heroku'),
+    'rclone': GroupUrlInstallSource(links=__rclone_download_links___, binary='rclone', package_name='rclone'),
+    'node': GroupUrlInstallSource(links=__node_download_links___, binary='node', package_name='nodejs'),
+    'npm': GroupUrlInstallSource(links=__node_download_links___, binary='npm', package_name='nodejs'),
+    'npx': GroupUrlInstallSource(links=__node_download_links___, binary='npx', package_name='nodejs'),
 }
 
 
