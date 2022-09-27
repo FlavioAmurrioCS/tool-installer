@@ -7,6 +7,7 @@ from __future__ import annotations
 import argparse
 import glob
 import itertools
+import logging
 import os
 import platform
 import re
@@ -168,6 +169,7 @@ PRE_CONFIGURED_TOOLS: dict[str, ToolInstallerInstallSource] = {
     'deno': GithubReleaseInstallSource(user='denoland', project='deno'),
     'hadolint': GithubReleaseInstallSource(user='hadolint', project='hadolint'),
     'code-server': GithubReleaseInstallSource(user='coder', project='code-server', binary='code-server'),
+    'geckodriver': GithubReleaseInstallSource(user='mozilla', project='geckodriver'),
 
     # GitProjectInstallSource
     'pyenv': GitProjectInstallSource(git_url='https://github.com/pyenv/pyenv', path='libexec/pyenv'),
@@ -406,7 +408,17 @@ class ToolInstaller(NamedTuple):
 
         url = f'https://github.com/{user}/{project}/releases/{"latest" if tag == "latest" else f"tag/{tag}"}'
         html = self.__get_html__(url)
-        return ['https://github.com' + link for link in re.findall(f'/{user}/{project}/releases/download/[^"]+', html)]
+        download_links = ['https://github.com' + link for link in re.findall(f'/{user}/{project}/releases/download/[^"]+', html)]
+        if not download_links:
+            logging.error('Github is now using lazy loading fragments :(')
+            assets_urls = ['https://github.com' + link for link in re.findall(f'/{user}/{project}/releases/expanded_assets/[^"]+', html)]
+            if assets_urls:
+                html = self.__get_html__(assets_urls[0])
+                download_links = ['https://github.com' + link for link in re.findall(f'/{user}/{project}/releases/download/[^"]+', html)]
+            else:
+                logging.error('Not assets urls')
+
+        return download_links
 
     def install_best(self, links: Sequence[str], binary: str, rename: str | None = None, package_name: str | None = None) -> str:
         rename = rename or binary
