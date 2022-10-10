@@ -149,6 +149,7 @@ PRE_CONFIGURED_TOOLS: dict[str, ToolInstallerInstallSource] = {
     'theme.sh': GithubScriptInstallSource(user='lemnos', project='theme.sh', path='bin/theme.sh'),
     'neofetch': GithubScriptInstallSource(user='dylanaraps', project='neofetch'),
     'adb-sync': GithubScriptInstallSource(user='google', project='adb-sync'),
+    'bb': GithubScriptInstallSource(user='FlavioAmurrioCS', project='dot', path='.dot/bin/scripts/bb'),
 
     # GithubReleaseInstallSource
     'shiv': GithubReleaseInstallSource(user='linkedin', project='shiv'),
@@ -170,6 +171,8 @@ PRE_CONFIGURED_TOOLS: dict[str, ToolInstallerInstallSource] = {
     'hadolint': GithubReleaseInstallSource(user='hadolint', project='hadolint'),
     'code-server': GithubReleaseInstallSource(user='coder', project='code-server', binary='code-server'),
     'geckodriver': GithubReleaseInstallSource(user='mozilla', project='geckodriver'),
+    'termscp': GithubReleaseInstallSource(user='veeso', project='termscp'),
+    'gh': GithubReleaseInstallSource(user='cli', project='cli', binary='gh'),
 
     # GitProjectInstallSource
     'pyenv': GitProjectInstallSource(git_url='https://github.com/pyenv/pyenv', path='libexec/pyenv'),
@@ -202,6 +205,16 @@ PRE_CONFIGURED_TOOLS: dict[str, ToolInstallerInstallSource] = {
     'tox': PipxInstallSource(package='tox'),
     'tuna': PipxInstallSource(package='tuna'),
     'virtualenv': PipxInstallSource(package='virtualenv'),
+    'ranger': PipxInstallSource(package='ranger-fm', command='ranger'),
+    'rifle': PipxInstallSource(package='ranger-fm', command='rifle'),
+    'http': PipxInstallSource(package='httpie', command='http'),
+    'https': PipxInstallSource(package='httpie', command='https'),
+    'youtube-dl': PipxInstallSource(package='youtube-dl', command='youtube-dl'),
+    'virtualenvwrapper': PipxInstallSource(package='virtualenvwrapper', command='virtualenvwrapper'),
+    'typer': PipxInstallSource(package='typer-cli', command='typer'),
+    'vd': PipxInstallSource(package='visidata', command='vd'),
+    'log-tool': PipxInstallSource(package='git+https://github.com/FlavioAmurrioCS/log-tool.git', command='log-tool'),
+    'twine': PipxInstallSource(package='twine', command='twine'),
 
     # GroupUrlInstallSource
     'heroku': GroupUrlInstallSource(links=__heroku_download_links___, binary='heroku', package_name='heroku'),
@@ -497,7 +510,7 @@ class ToolInstaller(NamedTuple):
         command = command or package
         bin_path = os.path.join(self.bin_dir, command)
         if not os.path.exists(bin_path):
-            shiv_executable = self.git_install_release(user='linkedin', project='shiv')
+            shiv_executable = self.git_install_release(user='linkedin', project='shiv', tag='1.0.1')
             subprocess.run(
                 (
                     newest_python(),
