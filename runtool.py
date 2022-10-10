@@ -7,6 +7,7 @@ from __future__ import annotations
 import argparse
 import glob
 import itertools
+import logging
 import os
 import platform
 import re
@@ -34,7 +35,7 @@ else:
 def newest_python() -> str:
     return os.path.realpath(
         subprocess.run(
-            ('which python3.11 || which python3.10 || which python3.9 || which python3.8 || which python3.7 || which python3 || which python'),
+            ('{ which python3.11 || which python3.10 || which python3.9 || which python3.8 || which python3.7 || which python3 || which python; } 2>/dev/null'),
             shell=True,
             capture_output=True,
             encoding='utf-8',
@@ -89,6 +90,13 @@ class PipxInstallSource(NamedTuple):
     command: str | None = None
 
 
+class GroupUrlInstallSource(NamedTuple):
+    links: Sequence[str]
+    binary: str
+    rename: str | None = None
+    package_name: str | None = None
+
+
 ToolInstallerInstallSource = Union[
     GithubScriptInstallSource,
     GithubReleaseInstallSource,
@@ -97,6 +105,42 @@ ToolInstallerInstallSource = Union[
     ZipTarInstallSource,
     ShivInstallSource,
     PipxInstallSource,
+    GroupUrlInstallSource,
+]
+
+
+__node_download_links___ = [
+    f'https://nodejs.org/dist/v16.16.0/node-v16.16.0{x}'
+    for x in (
+        '-aix-ppc64.tar.gz', '-darwin-arm64.tar.gz', '-darwin-arm64.tar.xz',
+        '-darwin-x64.tar.gz', '-darwin-x64.tar.xz', '-headers.tar.gz',
+        '-headers.tar.xz', '-linux-arm64.tar.gz', '-linux-arm64.tar.xz',
+        '-linux-armv7l.tar.gz', '-linux-armv7l.tar.xz', '-linux-ppc64le.tar.gz',
+        '-linux-ppc64le.tar.xz', '-linux-s390x.tar.gz', '-linux-s390x.tar.xz',
+        '-linux-x64.tar.gz', '-linux-x64.tar.xz', '-win-x64.7z', '-win-x64.zip',
+        '-win-x86.7z', '-win-x86.zip', '-x64.msi', '-x86.msi', '.pkg', '.tar.gz', '.tar.xz',
+    )
+]
+
+__rclone_download_links___ = [
+    f'https://downloads.rclone.org/rclone-current-{x}'
+    for x in (
+        'windows-amd64.zip', 'osx-amd64.zip', 'linux-amd64.zip', 'linux-amd64.deb',
+        'linux-amd64.rpm', 'freebsd-amd64.zip', 'netbsd-amd64.zip', 'openbsd-amd64.zip',
+        'plan9-amd64.zip', 'solaris-amd64.zip', 'windows-386.zip', 'linux-386.zip',
+        'linux-386.deb', 'linux-386.rpm', 'freebsd-386.zip', 'netbsd-386.zip',
+        'openbsd-386.zip', 'plan9-386.zip', 'linux-arm.zip', 'linux-arm.deb',
+        'linux-arm.rpm', 'freebsd-arm.zip', 'netbsd-arm.zip', 'linux-arm-v7.zip',
+        'linux-arm-v7.deb', 'linux-arm-v7.rpm', 'freebsd-arm-v7.zip', 'netbsd-arm-v7.zip',
+        'osx-arm64.zip', 'linux-arm64.zip', 'linux-arm64.deb', 'linux-arm64.rpm',
+        'linux-mips.zip', 'linux-mips.deb', 'linux-mips.rpm', 'linux-mipsle.zip',
+        'linux-mipsle.deb', 'linux-mipsle.rpm',
+    )
+]
+
+__heroku_download_links___ = [
+    f'https://cli-assets.heroku.com/heroku-{x}.tar.gz'
+    for x in ('darwin-x64', 'linux-x64', 'linux-arm', 'win32-x64', 'win32-x86')
 ]
 
 
@@ -105,9 +149,10 @@ PRE_CONFIGURED_TOOLS: dict[str, ToolInstallerInstallSource] = {
     'theme.sh': GithubScriptInstallSource(user='lemnos', project='theme.sh', path='bin/theme.sh'),
     'neofetch': GithubScriptInstallSource(user='dylanaraps', project='neofetch'),
     'adb-sync': GithubScriptInstallSource(user='google', project='adb-sync'),
+    'bb': GithubScriptInstallSource(user='FlavioAmurrioCS', project='dot', path='.dot/bin/scripts/bb'),
+
     # GithubReleaseInstallSource
     'shiv': GithubReleaseInstallSource(user='linkedin', project='shiv'),
-    'pre-commit': GithubReleaseInstallSource(user='pre-commit', project='pre-commit'),
     'fzf': GithubReleaseInstallSource(user='junegunn', project='fzf'),
     'rg': GithubReleaseInstallSource(user='BurntSushi', project='ripgrep', binary='rg'),
     'docker-compose': GithubReleaseInstallSource(user='docker', project='compose', binary='docker-compose'),
@@ -124,27 +169,59 @@ PRE_CONFIGURED_TOOLS: dict[str, ToolInstallerInstallSource] = {
     'btop': GithubReleaseInstallSource(user='aristocratos', project='btop'),
     'deno': GithubReleaseInstallSource(user='denoland', project='deno'),
     'hadolint': GithubReleaseInstallSource(user='hadolint', project='hadolint'),
+    'code-server': GithubReleaseInstallSource(user='coder', project='code-server', binary='code-server'),
+    'geckodriver': GithubReleaseInstallSource(user='mozilla', project='geckodriver'),
+    'termscp': GithubReleaseInstallSource(user='veeso', project='termscp'),
+    'gh': GithubReleaseInstallSource(user='cli', project='cli', binary='gh'),
+
     # GitProjectInstallSource
     'pyenv': GitProjectInstallSource(git_url='https://github.com/pyenv/pyenv', path='libexec/pyenv'),
     'nodenv': GitProjectInstallSource(git_url='https://github.com/nodenv/nodenv', path='libexec/nodenv'),
+
     # UrlInstallSource
     'repo': UrlInstallSource(url='https://storage.googleapis.com/git-repo-downloads/repo'),
+
     # ZipTarInstallSource
     'adb': ZipTarInstallSource(package_url=f'https://dl.google.com/android/repository/platform-tools-latest-{platform.system().lower()}.zip', executable_name='adb', package_name='platform-tools'),
     'fastboot': ZipTarInstallSource(package_url=f'https://dl.google.com/android/repository/platform-tools-latest-{platform.system().lower()}.zip', executable_name='fastboot', package_name='platform-tools'),
+
     # ShivInstallSource
     'pipx': ShivInstallSource(package='pipx'),
+
     # PipxInstallSource
     'autopep8': PipxInstallSource(package='autopep8'),
+    'babi': PipxInstallSource(package='babi'),
     'bpython': PipxInstallSource(package='bpython'),
     'clang-format': PipxInstallSource(package='clang-format'),
     'clang-tidy': PipxInstallSource(package='clang-tidy'),
     'gcovr': PipxInstallSource(package='gcovr'),
+    'jupyter-lab': PipxInstallSource(package='jupyterlab', command='jupyter-lab'),
+    'jupyter-notebook': PipxInstallSource(package='notebook', command='jupyter-notebook'),
     'mypy': PipxInstallSource(package='mypy'),
+    'pre-commit': PipxInstallSource(package='pre-commit'),
     'ptpython': PipxInstallSource(package='ptpython'),
+    'run': PipxInstallSource(package='runtool', command='run'),
+    'run-which': PipxInstallSource(package='runtool', command='run-which'),
     'tox': PipxInstallSource(package='tox'),
     'tuna': PipxInstallSource(package='tuna'),
     'virtualenv': PipxInstallSource(package='virtualenv'),
+    'ranger': PipxInstallSource(package='ranger-fm', command='ranger'),
+    'rifle': PipxInstallSource(package='ranger-fm', command='rifle'),
+    'http': PipxInstallSource(package='httpie', command='http'),
+    'https': PipxInstallSource(package='httpie', command='https'),
+    'youtube-dl': PipxInstallSource(package='youtube-dl', command='youtube-dl'),
+    'virtualenvwrapper': PipxInstallSource(package='virtualenvwrapper', command='virtualenvwrapper'),
+    'typer': PipxInstallSource(package='typer-cli', command='typer'),
+    'vd': PipxInstallSource(package='visidata', command='vd'),
+    'log-tool': PipxInstallSource(package='git+https://github.com/FlavioAmurrioCS/log-tool.git', command='log-tool'),
+    'twine': PipxInstallSource(package='twine', command='twine'),
+
+    # GroupUrlInstallSource
+    'heroku': GroupUrlInstallSource(links=__heroku_download_links___, binary='heroku', package_name='heroku'),
+    'rclone': GroupUrlInstallSource(links=__rclone_download_links___, binary='rclone', package_name='rclone'),
+    'node': GroupUrlInstallSource(links=__node_download_links___, binary='node', package_name='nodejs'),
+    'npm': GroupUrlInstallSource(links=__node_download_links___, binary='npm', package_name='nodejs'),
+    'npx': GroupUrlInstallSource(links=__node_download_links___, binary='npx', package_name='nodejs'),
 }
 
 
@@ -170,7 +247,7 @@ class ToolInstaller(NamedTuple):
     def __executable_from_dir__(self, directory: str, executable_name: str) -> str | None:
         glob1 = glob.iglob(os.path.join(directory, '**', executable_name), recursive=True)
         glob2 = glob.iglob(os.path.join(directory, '**', f'{executable_name}*'), recursive=True)
-        return next(itertools.chain(glob1, glob2), None)
+        return next((x for x in itertools.chain(glob1, glob2) if (os.path.isfile(x)) and not os.path.islink(x)), None)
 
     @contextmanager
     def __download__(self, url: str) -> Generator[str, None, None]:
@@ -298,7 +375,7 @@ class ToolInstaller(NamedTuple):
         system  darwin,linux,windows
         """
         system_patterns = {
-            'darwin': 'darwin|apple|macos',
+            'darwin': 'darwin|apple|macos|osx',
             'linux': 'linux|\\.deb|\\.rpm',
             'windows': 'windows|\\.exe',
         }
@@ -344,7 +421,17 @@ class ToolInstaller(NamedTuple):
 
         url = f'https://github.com/{user}/{project}/releases/{"latest" if tag == "latest" else f"tag/{tag}"}'
         html = self.__get_html__(url)
-        return ['https://github.com' + link for link in re.findall(f'/{user}/{project}/releases/download/[^"]+', html)]
+        download_links = ['https://github.com' + link for link in re.findall(f'/{user}/{project}/releases/download/[^"]+', html)]
+        if not download_links:
+            logging.error('Github is now using lazy loading fragments :(')
+            assets_urls = ['https://github.com' + link for link in re.findall(f'/{user}/{project}/releases/expanded_assets/[^"]+', html)]
+            if assets_urls:
+                html = self.__get_html__(assets_urls[0])
+                download_links = ['https://github.com' + link for link in re.findall(f'/{user}/{project}/releases/download/[^"]+', html)]
+            else:
+                logging.error('Not assets urls')
+
+        return download_links
 
     def install_best(self, links: Sequence[str], binary: str, rename: str | None = None, package_name: str | None = None) -> str:
         rename = rename or binary
@@ -414,13 +501,16 @@ class ToolInstaller(NamedTuple):
         if isinstance(source, PipxInstallSource):
             return self.pipx_install(**source._asdict())
 
+        if isinstance(source, GroupUrlInstallSource):
+            return self.install_best(**source._asdict())
+
         raise SystemExit(1)
 
     def shiv_install(self, package: str, command: str | None = None) -> str:
         command = command or package
         bin_path = os.path.join(self.bin_dir, command)
         if not os.path.exists(bin_path):
-            shiv_executable = self.git_install_release(user='linkedin', project='shiv')
+            shiv_executable = self.git_install_release(user='linkedin', project='shiv', tag='1.0.1')
             subprocess.run(
                 (
                     newest_python(),
