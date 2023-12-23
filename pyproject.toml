@@ -1,0 +1,70 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "runtool"
+dynamic = ["version"]
+description = "Install binary from github release."
+readme = "README.md"
+requires-python = ">=3.8"
+license = "MIT"
+keywords = ["github", "release", "install", "binary"]
+authors = [
+    { name = "Flavio Amurrio", email = "25621374+FlavioAmurrioCS@users.noreply.github.com" },
+]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Programming Language :: Python",
+  "Programming Language :: Python :: 3.8",
+  "Programming Language :: Python :: 3.9",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: Implementation :: CPython",
+  "Programming Language :: Python :: Implementation :: PyPy",
+]
+
+dependencies = []
+
+[project.scripts]
+runtool = "runtool:main"
+
+[project.urls]
+Documentation = "https://github.com/FlavioAmurrioCS/runtool#readme"
+Issues = "https://github.com/FlavioAmurrioCS/runtool/issues"
+Source = "https://github.com/FlavioAmurrioCS/runtool"
+
+[tool.hatch.version]
+path = "runtool/__init__.py"
+
+[[tool.hatch.envs.all.matrix]]
+python = ["3.8", "3.9", "3.10", "3.11", "3.12"]
+
+[tool.hatch.envs.types]
+dependencies = [
+  "mypy>=1.0.0",
+]
+[tool.hatch.envs.types.scripts]
+check = "mypy --install-types --non-interactive {args:runtool.py}"
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "/runtool",
+]
+
+[tool.mypy]
+check_untyped_defs = true
+disallow_any_generics = true
+disallow_incomplete_defs = true
+disallow_untyped_defs = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+
+[tool.autopep8]
+ignore=[
+  "E265", # block comment should start with '# '
+  "E501", # line too long
+  "W504" # line break after binary operator
+]
