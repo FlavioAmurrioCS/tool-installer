@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 """":
-exec "${LATEST_PYTHON:-$(which python3.12 || which python3.11 || which python3.10 || which python3.9 || which python3.8 || which python3.7 || which python3 || which python)}" "${0}" "${@}"
+exec "${LATEST_PYTHON:-$(which python3.12 || which python3.11 || which python3.10 || which python3.9 || which python3.8 || which python3 || which python)}" "${0}" "${@}"
 """
 from __future__ import annotations
 
@@ -47,36 +47,32 @@ if TYPE_CHECKING:
     from typing_extensions import Self
     from typing_extensions import TypeAlias
     from _collections_abc import dict_keys
+    JSON_TYPE: TypeAlias = Union[str, int, float, bool, None, List[Any], Dict[str, Any]]
 else:
     Protocol = object
 
 __VERSION__ = '1.0.2'
 
 
-JSON_TYPE: TypeAlias = Union[str, int, float, bool, None, List[Any], Dict[str, Any]]
-
-
-def _gron_helper(obj: JSON_TYPE, path: str = 'json') -> Generator[tuple[str, str], None, None]:
-    if isinstance(obj, dict):
-        yield path, '{}'
-        for key, value in obj.items():
-            key = f'.{key}' if key.isalnum() else f'["{key}"]'
-            yield from _gron_helper(value, f'{path}{key}')
-    elif isinstance(obj, list):
-        yield path, '[]'
-        for i, value in enumerate(obj):
-            yield from _gron_helper(value, f'{path}[{i}]')
-    elif isinstance(obj, bool):
-        yield path, 'true' if obj else 'false'
-    elif obj is None:
-        yield path, 'null'
-    elif isinstance(obj, str):
-        yield path, f'"{obj}"'
-    else:
-        yield path, str(obj)
-
-
 def gron(obj: JSON_TYPE) -> list[str]:
+    def _gron_helper(obj: JSON_TYPE, path: str = 'json') -> Generator[tuple[str, str], None, None]:
+        if isinstance(obj, dict):
+            yield path, '{}'
+            for key, value in obj.items():
+                key = f'.{key}' if key.isalnum() else f'["{key}"]'
+                yield from _gron_helper(value, f'{path}{key}')
+        elif isinstance(obj, list):
+            yield path, '[]'
+            for i, value in enumerate(obj):
+                yield from _gron_helper(value, f'{path}[{i}]')
+        elif isinstance(obj, bool):
+            yield path, 'true' if obj else 'false'
+        elif obj is None:
+            yield path, 'null'
+        elif isinstance(obj, str):
+            yield path, f'"{obj}"'
+        else:
+            yield path, str(obj)
     return sorted(
         f'{path} = {value};'
         for path, value in _gron_helper(obj)
@@ -112,29 +108,21 @@ def selection(options: list[str]) -> str | None:
         return None
 
 
-# @lru_cache(maxsize=1)
-# def list_executables_in_path() -> List[str]:
-#     path_dirs = os.environ.get('PATH', '').split(os.pathsep)
-#     executables = []
-#     for path_dir in path_dirs:
-#         if os.path.isdir(path_dir):
-#             for file_name in os.listdir(path_dir):
-#                 file_path = os.path.join(path_dir, file_name)
-#                 if os.access(file_path, os.X_OK) and not os.path.isdir(file_path):
-#                     executables.append(file_path)
-#     return executables
-
-
 @lru_cache(maxsize=1)
-def latest_python() -> str:
-    return next(
-        (
-            x
-            for x in ('python3.12', 'python3.11', 'python3.10', 'python3.9', 'python3.8', 'python3.7', 'python3', 'python')
-            if shutil.which(x)
-        ),
-        sys.executable,
-    )
+def all_pythons() -> tuple[str, ...]:
+    return tuple(
+        x
+        for x in (
+            'python3',
+            'python3.8',
+            'python3.9',
+            'python3.10',
+            'python3.11',
+            'python3.12',
+            'python3.13',
+        )
+        if shutil.which(x)
+    ) or (sys.executable,)
 
 
 @lru_cache(maxsize=1)
@@ -216,10 +204,12 @@ class _ToolInstallerBase(Protocol):
         )
 
     def _mdict(self) -> dict[str, Any]:
+        class_name = self.__class__.__name__
+
         m_asdict: dict[str, str] = (
-            self._asdict()
-            if hasattr(self, '_asdict')
-            else asdict(self)  # type:ignore
+            asdict(self)  # type:ignore
+            if dataclasses.is_dataclass(self)
+            else self._asdict()  # type:ignore
         )
 
         with suppress(Exception):
@@ -229,7 +219,7 @@ class _ToolInstallerBase(Protocol):
                     del m_asdict[k]
 
         return {
-            'class': self.__class__.__name__,
+            'class': class_name,
             **{
                 key: value
                 for key, value in m_asdict.items()
@@ -422,6 +412,9 @@ class BestLinkService(NamedTuple):
         ]
 
 
+_BEST_LINK_SERVICE = BestLinkService()
+
+
 class LinkInstaller(InternetInstaller, Protocol):
     binary: str
     rename: str | None = None
@@ -446,7 +439,7 @@ class LinkInstaller(InternetInstaller, Protocol):
 
     def install_best(self, links: Sequence[str], binary: str, rename: str | None = None, package_name: str | None = None) -> str:
         rename = rename or binary
-        download_url = BestLinkService().pick(links)
+        download_url = _BEST_LINK_SERVICE.pick(links)
         if not download_url:
             logging.error(
                 f'Could not choose appropiate download from {rename}',
@@ -564,15 +557,37 @@ class GithubReleaseLinks(LinkInstaller):
         return self.github_source.links()
 
 
-VIRTUALENV_EXECUTABLE_PROVIDER = UrlInstallSource(url='https://bootstrap.pypa.io/virtualenv.pyz', rename=',virtualenv')
-PIPX_EXECUTABLE_PROVIDER = UrlInstallSource(url='https://github.com/pypa/pipx/releases/download/1.3.3/pipx.pyz', rename=',pipx')
-SHIV_EXECUTABLE_PROVIDER = UrlInstallSource(url='https://github.com/linkedin/shiv/releases/download/1.0.4/shiv', rename=',shiv')
-PIP_EXECUTABLE_PROVIDER = UrlInstallSource(url='https://bootstrap.pypa.io/pip/pip.pyz', rename=',pip')
+@dataclass
+class ShivInstallSource(_ToolInstallerBase):
+    SHIV_EXECUTABLE_PROVIDER = UrlInstallSource(url='https://github.com/linkedin/shiv/releases/download/1.0.4/shiv', rename=',shiv')
+    package: str
+    command: str | None = None
+
+    def get_executable(self) -> str:
+        command = self.command or self.package
+        bin_path = os.path.join(TOOL_INSTALLER_CONFIG.BIN_DIR, command)
+        if not os.path.exists(bin_path):
+            shiv_executable = self.SHIV_EXECUTABLE_PROVIDER.get_executable()
+            subprocess.run(
+                (
+                    all_pythons()[0],
+                    shiv_executable,
+                    '-c', command,
+                    '-o', bin_path,
+                    self.package,
+                ),
+                check=True,
+            )
+        return self.make_executable(bin_path)
+
+
+# VIRTUALENV_EXECUTABLE_PROVIDER = UrlInstallSource(url='https://bootstrap.pypa.io/virtualenv.pyz', rename=',virtualenv')
+# PIP_EXECUTABLE_PROVIDER = UrlInstallSource(url='https://bootstrap.pypa.io/pip/pip.pyz', rename=',pip')
 FZF_EXECUTABLE_PROVIDER = GithubReleaseLinks(url='https://github.com/junegunn/fzf', rename=',fzf')
-GUM_EXECUTABLE_PROVIDER = GithubReleaseLinks(url='https://github.com/charmbracelet/gum', rename=',gum')
-YQ_EXECUTABLE_PROVIDER = GithubReleaseLinks(url='https://github.com/mikefarah/yq', rename=',yq')
-GRON_EXECUTABLE_PROVIDER = GithubReleaseLinks(url='https://github.com/tomnomnom/gron', rename=',gron')
-HTMLQ_EXECUTABLE_PROVIDER = GithubReleaseLinks(url='https://github.com/mgdm/htmlq', rename=',htmlq')
+# GUM_EXECUTABLE_PROVIDER = GithubReleaseLinks(url='https://github.com/charmbracelet/gum', rename=',gum')
+# YQ_EXECUTABLE_PROVIDER = GithubReleaseLinks(url='https://github.com/mikefarah/yq', rename=',yq')
+# GRON_EXECUTABLE_PROVIDER = GithubReleaseLinks(url='https://github.com/tomnomnom/gron', rename=',gron')
+# HTMLQ_EXECUTABLE_PROVIDER = GithubReleaseLinks(url='https://github.com/mgdm/htmlq', rename=',htmlq')
 
 # endregion core
 
@@ -599,29 +614,6 @@ class GitProjectInstallSource(_ToolInstallerBase):
         elif self.pull:
             subprocess.run(('git', '-C', git_project_location, 'pull'))
         return self.make_executable(git_bin)
-
-
-@dataclass
-class ShivInstallSource(_ToolInstallerBase):
-    package: str
-    command: str | None = None
-
-    def get_executable(self) -> str:
-        command = self.command or self.package
-        bin_path = os.path.join(TOOL_INSTALLER_CONFIG.BIN_DIR, command)
-        if not os.path.exists(bin_path):
-            shiv_executable = SHIV_EXECUTABLE_PROVIDER.get_executable()
-            subprocess.run(
-                (
-                    latest_python(),
-                    shiv_executable,
-                    '-c', command,
-                    '-o', bin_path,
-                    self.package,
-                ),
-                check=True,
-            )
-        return self.make_executable(bin_path)
 
 
 @dataclass
@@ -733,6 +725,7 @@ class LinkScraperInstaller(LinkInstaller):
 
 @dataclass
 class PipxInstallSource(_ToolInstallerBase):
+    PIPX_EXECUTABLE_PROVIDER = ShivInstallSource(package='pipx')
     package: str
     command: str | None = None
 
@@ -740,16 +733,15 @@ class PipxInstallSource(_ToolInstallerBase):
         command = self.command or self.package
         bin_path = os.path.join(TOOL_INSTALLER_CONFIG.BIN_DIR, command)
         if not os.path.exists(bin_path):
-            pipx_cmd = PIPX_EXECUTABLE_PROVIDER.get_executable()
+            pipx_cmd = self.PIPX_EXECUTABLE_PROVIDER.get_executable()
             env = {
                 **os.environ,
-                'PIPX_DEFAULT_PYTHON': latest_python(),
+                'PIPX_DEFAULT_PYTHON': all_pythons()[0],
                 'PIPX_BIN_DIR': TOOL_INSTALLER_CONFIG.BIN_DIR,
                 'PIPX_HOME': TOOL_INSTALLER_CONFIG.PIPX_HOME,
             }
             subprocess.run(
                 (
-                    latest_python(),
                     pipx_cmd, 'install', '--force',
                     self.package,
                 ), check=True, env=env,
@@ -992,24 +984,27 @@ class CLIWhich(CLIRun, CLIApp):
         return 0
 
 
-_FZF_EXECUTABLE = shutil.which('fzf') or shutil.which(',fzf')
-if _FZF_EXECUTABLE:
-    class CLIMultiInstaller(CLIApp):
-        """Multi installer."""
-        COMMAND_NAME = 'multi-installer'
+class CLIMultiInstaller(CLIApp):
+    """Multi installer."""
+    COMMAND_NAME = 'multi-installer'
 
-        @classmethod
-        def run(cls, argv: Sequence[str] | None = None) -> int:
-            _ = cls.parse_args(argv)
-            result = subprocess.run(
-                (_FZF_EXECUTABLE or 'fzf', '--multi'),
-                input='\n'.join(f'{tool:30} {description}' for tool, description in RUNTOOL_CONFIG.tools_descriptions().items()),
-                text=True,
-                stdout=subprocess.PIPE,
-            )
-            for line in result.stdout.splitlines():
-                print(RUNTOOL_CONFIG[line.split(maxsplit=1)[0]].get_executable())
-            return 0
+    @classmethod
+    def run(cls, argv: Sequence[str] | None = None) -> int:
+        _ = cls.parse_args(argv)
+        _FZF_EXECUTABLE = shutil.which('fzf') or shutil.which(',fzf') or FZF_EXECUTABLE_PROVIDER.get_executable()
+
+        result = subprocess.run(
+            (_FZF_EXECUTABLE or 'fzf', '--multi'),
+            input='\n'.join(f'{tool:30} {description}' for tool, description in RUNTOOL_CONFIG.tools_descriptions().items()),
+            text=True,
+            stdout=subprocess.PIPE,
+        )
+        for tool in (line.split(maxsplit=1)[0] for line in result.stdout.splitlines()):
+            print('#' * 100)
+            print(f' {tool} '.center(100))
+            print('#' * 100)
+            print(RUNTOOL_CONFIG[tool].get_executable())
+        return 0
 
 
 class CLIFilterLinks(CLIApp):
