@@ -982,7 +982,6 @@ class CLIRun(CLIApp):
         args, rest = cls.parse_args(argv, allow_unknown_args=True)
         tool = RUNTOOL_CONFIG[args.tool].get_executable()
         cmd = (tool, *rest)
-        logging.error(f'Running: {cmd}')
         os.execvp(cmd[0], cmd)
 
 
@@ -1233,7 +1232,6 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 
 if __name__ == '__main__':
-    RUNTOOL_CONFIG['taplo'].get_executable()
-    # raise SystemExit(main())
+    raise SystemExit(main())
 
 # endregion: cli
