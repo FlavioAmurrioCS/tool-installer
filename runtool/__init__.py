@@ -8,6 +8,7 @@ import argparse
 import configparser
 import dataclasses
 import glob
+import gzip
 import itertools
 import json
 import logging
@@ -95,7 +96,10 @@ def input_tty(prompt: str | None = None) -> str:
     with open('/dev/tty') as tty:
         if prompt:
             print(prompt, end='', file=sys.stderr)
-        return tty.readline().strip()
+        try:
+            return tty.readline().strip()
+        except KeyboardInterrupt:
+            raise SystemExit(1)
 
 
 def selection(options: list[str]) -> str | None:
@@ -230,8 +234,12 @@ class _ToolInstallerBase(Protocol):
 
 class InternetInstaller(_ToolInstallerBase, Protocol):
     @staticmethod
-    def uncompress(filename: str) -> zipfile.ZipFile | tarfile.TarFile:
-        return zipfile.ZipFile(filename) if filename.endswith('.zip') else tarfile.open(filename)
+    def uncompress(filename: str) -> zipfile.ZipFile | tarfile.TarFile | gzip.GzipFile:
+        if filename.endswith('.zip'):
+            return zipfile.ZipFile(filename)
+        if filename.endswith('.gz') and not filename.endswith('.tar.gz'):
+            return gzip.open(filename)
+        return tarfile.open(filename)
 
     @staticmethod
     def find_executable(directory: str, executable_name: str) -> str | None:
@@ -282,7 +290,12 @@ class InternetInstaller(_ToolInstallerBase, Protocol):
                 with tempfile.TemporaryDirectory() as tempdir:
                     temp_extract_path = os.path.join(tempdir, 'temp_package')
                     with cls.uncompress(tar_zip_file) as untar_unzip_file:
-                        untar_unzip_file.extractall(temp_extract_path)
+                        if isinstance(untar_unzip_file, gzip.GzipFile):
+                            os.makedirs(temp_extract_path, exist_ok=True)
+                            with open(os.path.join(temp_extract_path, executable_name), 'wb') as f:
+                                f.write(untar_unzip_file.read())
+                        else:
+                            untar_unzip_file.extractall(temp_extract_path)
                     os.makedirs(TOOL_INSTALLER_CONFIG.PACKAGE_DIR, exist_ok=True)
                     shutil.move(temp_extract_path, package_path)
 
@@ -347,6 +360,7 @@ class BestLinkService(NamedTuple):
         links = [x for x in links if '32-bit' not in x.lower()] or links
         links = [x for x in links if '.pkg' not in x.lower()] or links
         links = [x for x in links if 'manifest' not in x.lower()] or links
+        links = [x for x in links if 'full' in x.lower()] or links
 
         if len(links) == 2:
             a, b = sorted(links, key=len)
@@ -446,7 +460,7 @@ class LinkInstaller(InternetInstaller, Protocol):
             )
             raise SystemExit(1)
         basename = os.path.basename(download_url)
-        if basename.endswith('.zip') or '.tar' in basename or basename.endswith('.tgz') or basename.endswith('.tbz'):
+        if any(basename.endswith(x) for x in ('.zip', '.tgz', '.tbz', '.gz')) or '.tar' in basename:
             return self.executable_from_package(
                 package_url=download_url,
                 executable_name=binary,
@@ -968,6 +982,7 @@ class CLIRun(CLIApp):
         args, rest = cls.parse_args(argv, allow_unknown_args=True)
         tool = RUNTOOL_CONFIG[args.tool].get_executable()
         cmd = (tool, *rest)
+        logging.error(f'Running: {cmd}')
         os.execvp(cmd[0], cmd)
 
 
@@ -1218,6 +1233,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 
 if __name__ == '__main__':
-    raise SystemExit(main())
+    RUNTOOL_CONFIG['taplo'].get_executable()
+    # raise SystemExit(main())
 
 # endregion: cli
