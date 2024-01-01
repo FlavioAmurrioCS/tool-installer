@@ -1,5 +1,5 @@
 ci:
-  skip: [pyright, hatch-test, taplo, tox]
+  skip: [hatch-test, taplo, tox]
 repos:
   - repo: https://github.com/ComPWA/mirrors-taplo
     rev: "v0.8.1"
@@ -33,10 +33,6 @@ repos:
     hooks:
       - id: mypy
         additional_dependencies: [types-all]
-  - repo: https://github.com/RobertCraigie/pyright-python
-    rev: v1.1.344
-    hooks:
-      - id: pyright
   - repo: local
     hooks:
       - id: format-runtool-ini
