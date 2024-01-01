@@ -1,7 +1,4 @@
-#!/usr/bin/env bash
-"""":
-exec "${LATEST_PYTHON:-$(which python3.12 || which python3.11 || which python3.10 || which python3.9 || which python3.8 || which python3 || which python)}" "${0}" "${@}"
-"""  # noqa: D205, E501, D415
+#!/usr/bin/env python3
 from __future__ import annotations
 
 import argparse
@@ -309,7 +306,8 @@ class InternetInstaller(_ToolInstallerBase, Protocol):
         package_name: str | None = None,
         rename: str | None = None,
     ) -> str:
-        """Get the executable from a online package.
+        """
+        Get the executable from a online package.
 
         package_url         points to zip/tar file.
         executable_name     file to looked for in package.
@@ -378,7 +376,8 @@ class BestLinkService(NamedTuple):
         return selection(links) or sorted(links, key=len)[-1]
 
     def filter_links(self, links: Sequence[str]) -> list[str]:
-        """Will look at the urls and based on the information it has will try to pick the best one.
+        """
+        Will look at the urls and based on the information it has will try to pick the best one.
 
         links   links to consider.
         """
