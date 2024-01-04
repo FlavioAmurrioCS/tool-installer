@@ -50,8 +50,6 @@ if TYPE_CHECKING:
 else:
     Protocol = object
 
-__VERSION__ = "1.0.2"
-
 
 def gron(obj: JSON_TYPE) -> list[str]:
     def _gron_helper(obj: JSON_TYPE, path: str = "json") -> Generator[tuple[str, str], None, None]:
@@ -400,7 +398,7 @@ class BestLinkService(NamedTuple):
 
         if len(links) == 2:  # noqa: PLR2004
             a, b = sorted(links, key=len)
-            suffix = b.lower().removeprefix(a.lower())
+            suffix = b.lower()[len(a) :] if b.lower().startswith(a.lower()) else b.lower()
             if (a + suffix).lower() == b.lower():
                 return [a]
             if len(a) == len(b) and a.replace(".tar.gz", ".tar.xz") == b.replace(
@@ -801,7 +799,7 @@ class LinkScraperInstaller(LinkInstaller):
 
 @dataclass
 class PipxInstallSource(_ToolInstallerBase):
-    PIPX_EXECUTABLE_PROVIDER = ShivInstallSource(package="pipx")
+    PIPX_EXECUTABLE_PROVIDER = ShivInstallSource(package="pipx", command="pipx")
     package: str
     command: str | None = None
 

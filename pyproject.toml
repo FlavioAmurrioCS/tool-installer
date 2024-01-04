@@ -1,5 +1,5 @@
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling", "hatch-vcs"]
 build-backend = "hatchling.build"
 
 [project]
@@ -36,7 +36,10 @@ Issues = "https://github.com/FlavioAmurrioCS/runtool/issues"
 Source = "https://github.com/FlavioAmurrioCS/runtool"
 
 [tool.hatch.version]
-path = "runtool/__init__.py"
+source = "vcs"
+
+[tool.hatch.build.hooks.vcs]
+version-file = "runtool/_version.py"
 
 [tool.hatch.envs.default]
 dependencies = [
@@ -71,8 +74,13 @@ include = [
   "/runtool",
 ]
 
+
 # COMMON SETTINGS BELOW
+[tool.pyright]
+pythonVersion = "3.8"
+
 [tool.mypy]
+python_version = "3.8"
 check_untyped_defs = true
 disallow_any_generics = true
 disallow_incomplete_defs = true
