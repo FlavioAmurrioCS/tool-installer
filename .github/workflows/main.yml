@@ -8,7 +8,7 @@ on:
 
 jobs:
   main:
-    uses: FlavioAmurrioCS/workflows/.github/workflows/common-python.yml@test-me-workflow
+    uses: FlavioAmurrioCS/workflows/.github/workflows/common-python.yml@main
     permissions:
       contents: write
       id-token: write
