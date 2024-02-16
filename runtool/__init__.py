@@ -19,6 +19,7 @@ import sys
 import tarfile
 import tempfile
 import zipfile
+from abc import abstractmethod
 from collections import Counter
 from contextlib import contextmanager
 from contextlib import suppress
@@ -195,6 +196,9 @@ TOOL_INSTALLER_CONFIG = ToolInstallerConfig()
 
 
 class ExecutableProvider(Protocol):
+    def executable_path(self) -> str:
+        ...
+
     def get_executable(self) -> str:
         ...
 
@@ -204,6 +208,12 @@ class ExecutableProvider(Protocol):
     def _mdict(self) -> dict[str, Any]:
         ...
 
+    def uninstall(self) -> None:
+        ...
+
+    def reinstall(self) -> str:
+        ...
+
 
 class _ToolInstallerBase(Protocol):
     @staticmethod
@@ -211,8 +221,17 @@ class _ToolInstallerBase(Protocol):
         os.chmod(filename, os.stat(filename).st_mode | stat.S_IEXEC)
         return filename
 
+    @abstractmethod
     def get_executable(self) -> str:
         ...
+
+    @abstractmethod
+    def uninstall(self) -> None:
+        ...
+
+    def reinstall(self) -> str:
+        self.uninstall()
+        return self.get_executable()
 
     def run(self, *args: str) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
@@ -328,7 +347,7 @@ class InternetInstaller(_ToolInstallerBase, Protocol):
                         with open(os.path.join(temp_extract_path, executable_name), "wb") as f:
                             f.write(untar_unzip_file.read())
                     else:
-                        untar_unzip_file.extractall(temp_extract_path)
+                        untar_unzip_file.extractall(temp_extract_path)  # noqa: S202
                 os.makedirs(TOOL_INSTALLER_CONFIG.PACKAGE_DIR, exist_ok=True)
                 shutil.move(temp_extract_path, package_path)
 
@@ -355,15 +374,6 @@ class InternetInstaller(_ToolInstallerBase, Protocol):
 
         os.symlink(executable, symlink_path, target_is_directory=False)
         return symlink_path
-
-
-@dataclass
-class UrlInstallSource(InternetInstaller):
-    url: str
-    rename: str | None = None
-
-    def get_executable(self) -> str:
-        return self.executable_from_url(url=self.url, rename=self.rename)
 
 
 class BestLinkService(NamedTuple):
@@ -473,11 +483,14 @@ class LinkInstaller(InternetInstaller, Protocol):
     def links(self) -> list[str]:
         ...
 
-    def get_executable(self) -> str:
-        executable_path = os.path.join(
+    def executable_path(self) -> str:
+        return os.path.join(
             TOOL_INSTALLER_CONFIG.BIN_DIR,
             self.rename or self.binary,
         )
+
+    def get_executable(self) -> str:
+        executable_path = self.executable_path()
         if os.path.exists(executable_path):
             return executable_path
 
@@ -487,6 +500,15 @@ class LinkInstaller(InternetInstaller, Protocol):
             rename=self.rename,
             package_name=self.package_name,
         )
+
+    def uninstall(self) -> None:
+        executable_path = self.executable_path()
+        if os.path.exists(executable_path):
+            if os.path.islink(executable_path):
+                # TODO: NEED TO DELETE THE FOLDER OF THE PACKAGE  # noqa: TD002, FIX002, TD003
+                realpath = os.path.realpath(executable_path)
+                os.remove(realpath)
+            os.remove(executable_path)
 
     def install_best(
         self,
@@ -509,6 +531,19 @@ class LinkInstaller(InternetInstaller, Protocol):
                 rename=rename,
             )
         return self.executable_from_url(download_url, rename=rename)
+
+
+@dataclass
+class UrlInstallSource(LinkInstaller):
+    url: str
+    binary: str = ""
+    rename: str | None = None
+
+    def __post_init__(self) -> None:
+        self.binary = self.binary or os.path.basename(self.url)
+
+    def links(self) -> list[str]:
+        return [self.url]
 
 
 @dataclass
@@ -633,9 +668,15 @@ class ShivInstallSource(_ToolInstallerBase):
     package: str
     command: str | None = None
 
+    def executable_path(self) -> str:
+        return os.path.join(
+            TOOL_INSTALLER_CONFIG.BIN_DIR,
+            self.command or self.package,
+        )
+
     def get_executable(self) -> str:
         command = self.command or self.package
-        bin_path = os.path.join(TOOL_INSTALLER_CONFIG.BIN_DIR, command)
+        bin_path = self.executable_path()
         if not os.path.exists(bin_path):
             shiv_executable = self.SHIV_EXECUTABLE_PROVIDER.get_executable()
             subprocess.run(
@@ -652,6 +693,11 @@ class ShivInstallSource(_ToolInstallerBase):
             )
         return self.make_executable(bin_path)
 
+    def uninstall(self) -> None:
+        bin_path = self.executable_path()
+        if os.path.exists(bin_path):
+            os.remove(bin_path)
+
 
 FZF_EXECUTABLE_PROVIDER = GithubReleaseLinks(url="https://github.com/junegunn/fzf", rename=",fzf")
 
@@ -665,12 +711,21 @@ class GitProjectInstallSource(_ToolInstallerBase):
     tag: str = "master"
     pull: bool = False
 
-    def get_executable(self) -> str:
-        git_project_location = os.path.join(
+    def git_project_location(self) -> str:
+        return os.path.join(
             TOOL_INSTALLER_CONFIG.GIT_PROJECT_DIR,
             "_".join(self.git_url.split("/")[-1:]),
         )
-        git_bin = os.path.join(git_project_location, self.path)
+
+    def executable_path(self) -> str:
+        return os.path.join(
+            self.git_project_location(),
+            self.path,
+        )
+
+    def get_executable(self) -> str:
+        git_project_location = self.git_project_location()
+        git_bin = self.executable_path()
         if not os.path.exists(git_bin):
             subprocess.run(
                 (  # noqa: S603
@@ -687,21 +742,21 @@ class GitProjectInstallSource(_ToolInstallerBase):
             subprocess.run(("git", "-C", git_project_location, "pull"), check=False)  # noqa: S603
         return self.make_executable(git_bin)
 
+    def uninstall(self) -> None:
+        git_project_location = self.git_project_location()
+        if os.path.exists(git_project_location):
+            shutil.rmtree(git_project_location)
+
 
 @dataclass
-class ZipTarInstallSource(InternetInstaller):
+class ZipTarInstallSource(LinkInstaller):
     package_url: str
     executable_name: str
     package_name: str | None = None
     rename: str | None = None
 
-    def get_executable(self) -> str:
-        return self.executable_from_package(
-            package_url=self.package_url,
-            executable_name=self.executable_name,
-            package_name=self.package_name,
-            rename=self.rename,
-        )
+    def links(self) -> list[str]:
+        return [self.package_url]
 
 
 def pipecmd(cmd: Sequence[str], input: str) -> str:  # noqa: A002
@@ -803,9 +858,11 @@ class PipxInstallSource(_ToolInstallerBase):
     package: str
     command: str | None = None
 
+    def executable_path(self) -> str:
+        return os.path.join(TOOL_INSTALLER_CONFIG.BIN_DIR, self.command or self.package)
+
     def get_executable(self) -> str:
-        command = self.command or self.package
-        bin_path = os.path.join(TOOL_INSTALLER_CONFIG.BIN_DIR, command)
+        bin_path = self.executable_path()
         if not os.path.exists(bin_path):
             pipx_cmd = self.PIPX_EXECUTABLE_PROVIDER.get_executable()
             env = {
@@ -825,6 +882,18 @@ class PipxInstallSource(_ToolInstallerBase):
                 env=env,
             )
         return bin_path
+
+    def uninstall(self) -> None:
+        if os.path.exists(self.executable_path()):
+            pipx_cmd = self.PIPX_EXECUTABLE_PROVIDER.get_executable()
+            subprocess.run(
+                (  # noqa: S603
+                    pipx_cmd,
+                    "uninstall",
+                    self.package,
+                ),
+                check=True,
+            )
 
 
 # @dataclass
@@ -1089,6 +1158,34 @@ class CLIWhich(CLIRun, CLIApp):
         cls.check_help(argv)
         args = cls.parse_args(argv)
         print(RUNTOOL_CONFIG[args.tool].get_executable())
+        return 0
+
+
+class CLIUninstall(CLIRun, CLIApp):
+    """Uninstall tool."""
+
+    COMMAND_NAME = "uninstall"
+    tool: str
+
+    @classmethod
+    def run(cls, argv: Sequence[str] | None = None) -> int:
+        cls.check_help(argv)
+        args = cls.parse_args(argv)
+        RUNTOOL_CONFIG[args.tool].uninstall()
+        return 0
+
+
+class CLIReinstall(CLIRun, CLIApp):
+    """Reinstall tool."""
+
+    COMMAND_NAME = "reinstall"
+    tool: str
+
+    @classmethod
+    def run(cls, argv: Sequence[str] | None = None) -> int:
+        cls.check_help(argv)
+        args = cls.parse_args(argv)
+        RUNTOOL_CONFIG[args.tool].reinstall()
         return 0
 
 
@@ -1360,6 +1457,18 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0
     args, rest = parser.parse_known_args(argv)
     raise SystemExit(dct[args.command].run(rest))
+
+
+def test_placeholder() -> None:
+    _: type[ExecutableProvider] = GithubReleaseLinks
+    _: type[ExecutableProvider] = GronInstaller  # type: ignore[no-redef]
+    _: type[ExecutableProvider] = LinkScraperInstaller  # type: ignore[no-redef]
+    _: type[ExecutableProvider] = GroupUrlInstallSource  # type: ignore[no-redef]
+    _: type[ExecutableProvider] = ZipTarInstallSource  # type: ignore[no-redef]
+    _: type[ExecutableProvider] = UrlInstallSource  # type: ignore[no-redef]
+    _: type[ExecutableProvider] = ShivInstallSource  # type: ignore[no-redef]
+    _: type[ExecutableProvider] = GitProjectInstallSource  # type: ignore[no-redef]
+    _: type[ExecutableProvider] = PipxInstallSource  # type: ignore[no-redef]
 
 
 if __name__ == "__main__":
