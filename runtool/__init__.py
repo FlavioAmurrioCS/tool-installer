@@ -117,6 +117,13 @@ def selection(options: list[str]) -> str | None:
         return None
 
 
+def rm_shim(shim: str) -> None:
+    if os.path.islink(shim):
+        os.unlink(shim)
+    elif os.path.exists(shim):
+        shutil.rmtree(shim, ignore_errors=True)
+
+
 @lru_cache(maxsize=1)
 def all_pythons() -> tuple[str, ...]:
     return tuple(
@@ -505,10 +512,16 @@ class LinkInstaller(InternetInstaller, Protocol):
         executable_path = self.executable_path()
         if os.path.exists(executable_path):
             if os.path.islink(executable_path):
-                # TODO: NEED TO DELETE THE FOLDER OF THE PACKAGE  # noqa: TD002, FIX002, TD003
                 realpath = os.path.realpath(executable_path)
-                os.remove(realpath)
-            os.remove(executable_path)
+                package_dir = os.path.join(
+                    TOOL_INSTALLER_CONFIG.PACKAGE_DIR,
+                    os.path.dirname(realpath[len(TOOL_INSTALLER_CONFIG.PACKAGE_DIR) + 1 :]),
+                )
+                if not realpath.startswith(package_dir):
+                    logging.error("Not able to uninstall %s", realpath)
+                    raise SystemExit(1)
+                rm_shim(package_dir)
+            rm_shim(executable_path)
 
     def install_best(
         self,
@@ -694,9 +707,7 @@ class ShivInstallSource(_ToolInstallerBase):
         return self.make_executable(bin_path)
 
     def uninstall(self) -> None:
-        bin_path = self.executable_path()
-        if os.path.exists(bin_path):
-            os.remove(bin_path)
+        rm_shim(self.executable_path())
 
 
 FZF_EXECUTABLE_PROVIDER = GithubReleaseLinks(url="https://github.com/junegunn/fzf", rename=",fzf")
@@ -743,9 +754,7 @@ class GitProjectInstallSource(_ToolInstallerBase):
         return self.make_executable(git_bin)
 
     def uninstall(self) -> None:
-        git_project_location = self.git_project_location()
-        if os.path.exists(git_project_location):
-            shutil.rmtree(git_project_location)
+        rm_shim(self.git_project_location())
 
 
 @dataclass
@@ -1401,42 +1410,9 @@ class CLIFormatIni(CLIApp):
         return 0
 
 
-class CommaFixer(CLIApp):
-    """Fix commands in path."""
-
-    COMMAND_NAME = "__comma-fixer"
-
-    @classmethod
-    def run(cls, argv: Sequence[str] | None = None) -> int:
-        _ = cls.parse_args(argv)
-        path_dir = os.path.dirname(sys.argv[0])
-        for file_name in os.listdir(path_dir):
-            file_path = os.path.join(path_dir, file_name)
-            if (
-                file_name.startswith("-")
-                and os.access(file_path, os.X_OK)
-                and not os.path.isdir(file_path)
-            ):
-                shutil.move(file_path, os.path.join(path_dir, "," + file_name[1:]))
-        print("Fixed!", file=sys.stderr)
-        return 0
-
-
-class ValidateConfig(CLIApp):
-    """Validate config."""
-
-    COMMAND_NAME = "__validate-config"
-
-    @classmethod
-    def run(cls, argv: Sequence[str] | None = None) -> int:
-        _ = cls.parse_args(argv)
-        for tool in RUNTOOL_CONFIG.tools():
-            executable_provider = RUNTOOL_CONFIG[tool]
-            print(f"{executable_provider=}")
-        return 0
-
-
 def main(argv: Sequence[str] | None = None) -> int:
+    if "RUNTOOL_DEV" in os.environ:
+        import runtool._additional_cli  # noqa: F401
     dct = {
         x.COMMAND_NAME: x
         for x in CLIApp.__subclasses__()
