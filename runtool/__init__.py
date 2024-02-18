@@ -31,7 +31,6 @@ from typing import Any
 from typing import Dict
 from typing import Generator
 from typing import List
-from typing import Literal
 from typing import NamedTuple
 from typing import overload
 from typing import Sequence
@@ -43,6 +42,7 @@ from urllib.parse import urlparse
 
 if TYPE_CHECKING:
     from typing import Protocol  # python3.8+
+    from typing import Literal
     from typing_extensions import Self
     from typing_extensions import TypeAlias
     from _collections_abc import dict_keys
@@ -985,7 +985,7 @@ class _RunToolConfig:
     def tools(self) -> dict_keys[str, None]:
         return {x: None for x in sorted(self.config.sections())}.keys()
 
-    @lru_cache  # noqa: B019
+    @lru_cache(maxsize=None)  # noqa: B019
     def get_executable_provider(self, command: str) -> ExecutableProvider:
         obj = dict(self.config[command])
         class_name = obj.pop("class")
