@@ -1412,7 +1412,8 @@ class CLIFormatIni(CLIApp):
 
 def main(argv: Sequence[str] | None = None) -> int:
     if "RUNTOOL_DEV" in os.environ:
-        import runtool._additional_cli  # noqa: F401
+        with suppress(ModuleNotFoundError):
+            import runtool._additional_cli  # noqa: F401
     dct = {
         x.COMMAND_NAME: x
         for x in CLIApp.__subclasses__()
