@@ -98,7 +98,7 @@ def input_tty(prompt: str | None = None) -> str:
 
 
 def selection(options: list[str]) -> str | None:
-    if len(options) == 1:
+    if len(options) == 1 or os.environ.get("CI"):
         return options[0]
     print(
         f'{BColors.OKCYAN}{"#" * 100}\nPlease select one of the following options:\n{"#" * 100}{BColors.RESET}',  # noqa: E501
@@ -203,23 +203,17 @@ TOOL_INSTALLER_CONFIG = ToolInstallerConfig()
 
 
 class ExecutableProvider(Protocol):
-    def executable_path(self) -> str:
-        ...
+    def executable_path(self) -> str: ...
 
-    def get_executable(self) -> str:
-        ...
+    def get_executable(self) -> str: ...
 
-    def run(self, *args: str) -> subprocess.CompletedProcess[str]:
-        ...
+    def run(self, *args: str) -> subprocess.CompletedProcess[str]: ...
 
-    def _mdict(self) -> dict[str, Any]:
-        ...
+    def _mdict(self) -> dict[str, Any]: ...
 
-    def uninstall(self) -> None:
-        ...
+    def uninstall(self) -> None: ...
 
-    def reinstall(self) -> str:
-        ...
+    def reinstall(self) -> str: ...
 
 
 class _ToolInstallerBase(Protocol):
@@ -229,12 +223,10 @@ class _ToolInstallerBase(Protocol):
         return filename
 
     @abstractmethod
-    def get_executable(self) -> str:
-        ...
+    def get_executable(self) -> str: ...
 
     @abstractmethod
-    def uninstall(self) -> None:
-        ...
+    def uninstall(self) -> None: ...
 
     def reinstall(self) -> str:
         self.uninstall()
@@ -487,8 +479,7 @@ class LinkInstaller(InternetInstaller, Protocol):
     rename: str | None = None
     package_name: str | None = None
 
-    def links(self) -> list[str]:
-        ...
+    def links(self) -> list[str]: ...
 
     def executable_path(self) -> str:
         return os.path.join(
@@ -760,7 +751,7 @@ class GitProjectInstallSource(_ToolInstallerBase):
 @dataclass
 class ZipTarInstallSource(LinkInstaller):
     package_url: str
-    executable_name: str
+    binary: str
     package_name: str | None = None
     rename: str | None = None
 
@@ -1054,20 +1045,19 @@ class CLIApp(Protocol):
 
     @overload
     @classmethod
-    def parse_args(cls, argv: Sequence[str] | None) -> Self:
-        ...
+    def parse_args(cls, argv: Sequence[str] | None) -> Self: ...
 
     @overload
     @classmethod
-    def parse_args(cls, argv: Sequence[str] | None, *, allow_unknown_args: Literal[False]) -> Self:
-        ...
+    def parse_args(
+        cls, argv: Sequence[str] | None, *, allow_unknown_args: Literal[False]
+    ) -> Self: ...
 
     @overload
     @classmethod
     def parse_args(
         cls, argv: Sequence[str] | None, *, allow_unknown_args: Literal[True]
-    ) -> tuple[Self, list[str]]:
-        ...
+    ) -> tuple[Self, list[str]]: ...
 
     @classmethod
     def parse_args(
@@ -1080,8 +1070,7 @@ class CLIApp(Protocol):
         )
 
     @classmethod
-    def run(cls, argv: Sequence[str] | None = None) -> int:
-        ...
+    def run(cls, argv: Sequence[str] | None = None) -> int: ...
 
 
 class CLIRun(CLIApp):
