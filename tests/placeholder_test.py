@@ -5,6 +5,7 @@ from typing import Generator
 from unittest import mock
 
 import pytest
+
 import runtool
 from runtool import ExecutableProvider
 from runtool import RUNTOOL_CONFIG
