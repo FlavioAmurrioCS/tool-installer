@@ -25,7 +25,10 @@ classifiers = [
   "Programming Language :: Python :: Implementation :: PyPy",
 ]
 
-dependencies = []
+dependencies = [
+  "requests",
+  "typing_extensions",
+]
 
 [project.scripts]
 runtool = "runtool:main"

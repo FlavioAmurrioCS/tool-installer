@@ -41,6 +41,8 @@ from urllib.parse import urlparse
 
 
 if TYPE_CHECKING:
+    from requests import PreparedRequest
+    import requests
     from typing import Protocol  # python3.8+
     from typing import Literal
     from typing_extensions import Self
@@ -141,32 +143,73 @@ def all_pythons() -> tuple[str, ...]:
     ) or (sys.executable,)
 
 
+@lru_cache(maxsize=None)
+def domain_env_name(domain: str) -> str:
+    domain = domain.upper()
+    if domain in {"API.GITHUB.COM", "GITHUB.COM"}:
+        domain = f"PUBLIC.{domain}"
+
+    domain = f"TOKEN.{domain}"
+
+    weight = {
+        "GITHUB": 80,
+        "TOKEN": 90,
+    }
+    parsed = domain.rsplit(".", maxsplit=1)[0].upper()
+    tokens = sorted(
+        (x for x in re.split(r"[.-]+", parsed) if x not in {"API", "CLOUD"}),
+        key=lambda x: (weight.get(x, 0), x),
+    )
+    return "_".join(tokens)
+
+
+@lru_cache(maxsize=1)
+def default_session() -> requests.Session:
+    import requests
+    import requests.auth
+
+    class MyAuth(requests.auth.AuthBase):
+        def __call__(self, r: PreparedRequest) -> PreparedRequest:
+            if r.url:
+                from urllib.parse import urlparse
+
+                env_name = domain_env_name(urlparse(r.url).netloc)
+                if env_name in os.environ:
+                    r.headers["Authorization"] = f"token {os.environ[env_name]}"
+            return r
+
+    ret = requests.Session()
+    ret.auth = MyAuth()
+    return ret
+
+
+# def m_requests(url: str, headers: dict[str, str] | None = None) -> _UrlopenRet:
+#     import urllib.request
+
+#     headers = headers or {}
+#     if "github" in url and "GITHUB_TOKEN" in os.environ:
+#         headers["Authorization"] = f'token {os.environ["GITHUB_TOKEN"]}'
+
+#     req = urllib.request.Request(url, headers=headers or {})
+#     return urllib.request.urlopen(req)
+
+
 @lru_cache(maxsize=1)
 def get_request(url: str) -> str:
-    import urllib.request
-
-    headers = {}
-    if "github" in url and "GITHUB_TOKEN" in os.environ:
-        headers["Authorization"] = f'token {os.environ["GITHUB_TOKEN"]}'
-    req = urllib.request.Request(url, headers=headers)  # noqa: S310
-    with urllib.request.urlopen(req) as f:  # noqa: S310
-        return f.read().decode("utf-8")
+    return default_session().get(url).text
+    # with m_requests(url) as f:
+    #     return f.read().decode("utf-8")
 
 
 @contextmanager
 def download_context(url: str) -> Generator[str, None, None]:
-    import urllib.request
-
     logging.info("Downloading: %s", url)
     derive_name = os.path.basename(url)
     with tempfile.TemporaryDirectory() as tempdir:
         download_path = os.path.join(tempdir, derive_name)
-        headers = {}
-        if "github" in url and "GITHUB_TOKEN" in os.environ:
-            headers["Authorization"] = f'token {os.environ["GITHUB_TOKEN"]}'
-        req = urllib.request.Request(url, headers=headers)  # noqa: S310
-        with open(download_path, "wb") as file, urllib.request.urlopen(req) as f:  # noqa: S310
-            file.write(f.read())
+        with open(download_path, "wb") as file, default_session().get(url, stream=True) as response:
+            for chunk in response.iter_content(chunk_size=4 * 1024):
+                file.write(chunk)
         yield download_path
 
 
@@ -962,7 +1005,7 @@ class _RunToolConfig:
             warnings.simplefilter("ignore")
             from importlib.resources import path as importlib_path
 
-            with importlib_path(__package__, config_filename) as ipath:
+            with importlib_path(__package__, config_filename) as ipath:  # pyright: ignore[reportArgumentType]
                 foo.append(ipath.as_posix())
         return list({x: None for x in foo}.keys())
 

@@ -27,5 +27,12 @@
     "tests"
   ],
   "python.testing.unittestEnabled": false,
-  "python.testing.pytestEnabled": true
+  "python.testing.pytestEnabled": true,
+  "python.analysis.typeCheckingMode": "basic",
+  "python.analysis.exclude": [
+    "reportShadowedImports"
+  ],
+  "python.analysis.diagnosticSeverityOverrides": {
+    "reportShadowedImports": "none"
+  }
 }
