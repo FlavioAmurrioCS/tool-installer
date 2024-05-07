@@ -179,6 +179,11 @@ def default_session() -> requests.Session:
             return r
 
     ret = requests.Session()
+    verify = os.environ.get("RUNTOOL_CA_BUNDLE", None)
+    if verify and os.path.exists(verify):
+        ret.verify = verify
+    elif "RUNTOOL_VERIFY" in os.environ:
+        ret.verify = int(os.environ["RUNTOOL_VERIFY"]) != 0
     ret.auth = MyAuth()
     return ret
 
